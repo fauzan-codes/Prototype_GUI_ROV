@@ -1,6 +1,10 @@
-from PyQt5.QtWidgets import QApplication, QLabel
+import sys
+from PyQt5.QtWidgets import QApplication
+from ui.main_window import MainWindow
 
-app = QApplication([])
-label = QLabel("ROV GUI READY")
-label.show()
-app.exec_()
+app = QApplication(sys.argv)
+
+window = MainWindow()
+window.show()
+
+sys.exit(app.exec_())
