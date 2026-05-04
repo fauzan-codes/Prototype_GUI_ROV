@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seadiver Dashboard</title>
+
+    <link rel="stylesheet" href="style.css">
+
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+</head>
+<body>
+
+<!-- TOP BAR -->
+<header class="top-bar">
+    <div class="top-bar-title">
+        <h4>Seadiver</h4>
+        <h2>Universitas Negeri Surabaya</h2>
+    </div>
+    <div class="top-bar-center">
+        <!-- <span id="date-time">--:--:--</span> -->
+        <span id="date-time">21 oktober 2026</span>
+        <span id="date-time">24:60:60</span>
+    </div>
+
+    <div id="system-status" class="status-indicator offline">
+        <span class="status-dot"></span>
+        <span id="status-text">System Offline</span>
+    </div>
+</header>
+
+<!-- MAIN -->
+<main class="main-content">
+
+<!-- frontend/pages/dashboard.html -->
+<div class="dashboard-page">
+
+    <!-- FRONT CAMERA -->
+    <div class="widget large">
+        <div class="widget-header">
+            <h3>
+                <i class="fas fa-video"></i>
+                Front Camera
+            </h3>
+            <div class="camera-controls">
+                <button id="front-capture-btn" class="btn-icon" title="Capture">
+                    <i class="fas fa-camera"></i>
+                </button>
+                <button id="front-record-btn" class="btn-icon" title="Start Recording">
+                    <i class="fas fa-video"></i>
+                </button>
+                <label class="switch">
+                    <input id="front-toggle" type="checkbox">
+                    <span class="slider round"></span>
+                </label>
+                <div class="badge">
+                    <span id="front-badge" class="live-badge offline">OFFLINE</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="camera-feed">
+            <img id="front-camera" class="camera-stream" src="">
+            <div id="front-placeholder" class="camera-placeholder">
+                <i class="fas fa-camera"></i>
+                <p>Camera Offline</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTTOM CAMERA -->
+    <div class="widget large">
+        <div class="widget-header">
+            <h3>
+                <i class="fas fa-video"></i>
+                Bottom Camera
+            </h3>
+            <div class="camera-controls">
+                <button id="bottom-capture-btn" class="btn-icon" title="Capture">
+                    <i class="fas fa-camera"></i>
+                </button>
+                <button id="bottom-record-btn" class="btn-icon" title="Start Recording">
+                    <i class="fas fa-video"></i>
+                </button>
+                <label class="switch">
+                    <input id="bottom-toggle" type="checkbox">
+                    <span class="slider round"></span>
+                </label>
+                <div class="badge">
+                    <span id="bottom-badge" class="live-badge offline">OFFLINE</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="camera-feed">
+            <img id="bottom-camera" class="camera-stream" src="">
+            <div id="bottom-placeholder" class="camera-placeholder">
+                <i class="fas fa-camera"></i>
+                <p>Camera Offline</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="widget small">
+        <h3><i class="fas fa-qrcode"></i> QR Detection</h3>
+        <div class="widget-value qr-value">-</div>
+        <div class="widget-info">Status: <span class="qr-status">Waiting</span></div>
+    </div>
+
+    <div class="widget large">
+        <h3><i class="fas fa-route"></i> Trajectory</h3>
+        <canvas id="trajectory-canvas"></canvas>
+    </div>
+
+
+    <!-- BATTERY -->
+    <div class="widget small">
+        <h3>
+            <i class="fas fa-battery-full"></i>
+            Battery
+        </h3>
+
+        <div class="widget-value battery-value">Waiting...</div>
+
+        <div class="progress-bar">
+            <div class="progress battery-progress"></div>
+        </div>
+    </div>
+
+
+    <!-- DEPTH -->
+    <div class="widget small">
+        <h3>
+            <i class="fas fa-water"></i>
+            Depth
+        </h3>
+
+        <div class="widget-value depth-value">Waiting...</div>
+        <div class="widget-info">Target: 1.5m</div>
+    </div>
+
+
+    <!-- MOVEMENT -->
+    <!-- <div class="widget small">
+        <h3>
+            <i class="fas fa-arrows-up-down-left-right"></i>
+            Movement
+        </h3>
+
+        <div class="widget-value movement-value">Waiting...</div>
+        <div class="widget-info">
+            <span class="status-move stable">Stable</span>
+        </div>
+    </div> -->
+
+    <div class="widget small">
+        <h3>
+            <i class="fas fa-clock"></i>
+            Mission Timer
+        </h3>
+        <div id="time-display" class="widget-value">
+            00:00:00
+        </div>
+        <button id="btn-start" class="mission-btn start">
+            <i class="fas fa-play"></i>
+            <span>Start Mission</span>
+        </button>
+        <button id="btn-stop" class="mission-btn stop">
+            <i class="fas fa-stop"></i>
+            <span>Stop Mission</span>
+        </button>
+        <button id="btn-reset" class="mission-btn reset">
+            <i class="fas fa-redo"></i>
+            <span>Reset Mission</span>
+        </button>
+    </div>
+
+
+    <!-- ORIENTATION -->
+    <div class="widget large">
+        <div class="widget-header">
+            <h3>
+                <i class="fas fa-compass"></i>
+                Orientation
+            </h3>
+            <button id="orientation-reset-btn" class="orientation-btn">
+                <i class="fas fa-sync-alt"></i> Reset
+            </button>
+        </div>
+
+        <div class="orientation-view"></div>
+
+        <div class="orientation-data">
+
+            <div class="data-item">
+                <p>Roll (X)</p>
+                <div class="widget-value roll-value">0°</div>
+            </div>
+
+            <div class="data-item">
+                <p>Pitch (Y)</p>
+                <div class="widget-value pitch-value">0°</div>
+            </div>
+
+            <div class="data-item">
+                <p>Yaw (Z)</p>
+                <div class="widget-value yaw-value">0°</div>
+            </div>
+
+        </div>
+    </div>
+
+
+    <div class="widget large">
+        <div class="widget-header">
+            <h3><i class="fas fa-cogs"></i> Thruster Status</h3>
+        </div>
+
+        <div class="widget-body">
+            <div class="thruster-list">
+
+                <div class="thruster-item">
+                    <p>Front Left</p>
+                    <div class="progress-bar">
+                        <div class="progress thruster-front-left"></div>
+                    </div>
+                    <div class="thruster-info">
+                        <span class="thruster-status front-left-text">Off</span>
+                        <span class="thruster-value front-left-value">0</span>
+                        <span class="thruster-percent">%</span>
+                    </div>
+                </div>
+
+                <div class="thruster-item">
+                    <p>Front Right</p>
+                    <div class="progress-bar">
+                        <div class="progress thruster-front-right"></div>
+                    </div>
+                    <div class="thruster-info">
+                        <span class="thruster-status front-right-text">Off</span>
+                        <span class="thruster-value front-right-value">0</span>
+                        <span class="thruster-percent">%</span>
+                    </div>
+                </div>
+
+                <div class="thruster-item">
+                    <p>Rear Left</p>
+                    <div class="progress-bar">
+                        <div class="progress thruster-rear-left"></div>
+                    </div>
+                    <div class="thruster-info">
+                        <span class="thruster-status rear-left-text">Off</span>
+                        <span class="thruster-value rear-left-value">0</span>
+                        <span class="thruster-percent">%</span>
+                    </div>
+                </div>
+
+                <div class="thruster-item">
+                    <p>Rear Right</p>
+                    <div class="progress-bar">
+                        <div class="progress thruster-rear-right"></div>
+                    </div>
+                    <div class="thruster-info">
+                        <span class="thruster-status rear-right-text">Off</span>
+                        <span class="thruster-value rear-right-value">0</span>
+                        <span class="thruster-percent">%</span>
+                    </div>
+                </div>
+
+                <div class="thruster-item">
+                    <p>Top</p>
+                    <div class="progress-bar">
+                        <div class="progress thruster-top"></div>
+                    </div>
+                    <div class="thruster-info">
+                        <span class="thruster-status top-text">Off</span>
+                        <span class="thruster-value top-value">0</span>
+                        <span class="thruster-percent">%</span>
+                    </div>
+                </div>
+
+                <div class="thruster-item">
+                    <p>Bottom</p>
+                    <div class="progress-bar">
+                        <div class="progress thruster-bottom"></div>
+                    </div>
+                    <div class="thruster-info">
+                        <span class="thruster-status bottom-text">Off</span>
+                        <span class="thruster-value bottom-value">0</span>
+                        <span class="thruster-percent">%</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="thruster-footer">
+                <p class="active-thrusters">Active Thrusters: 0 of 6</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="widget large">
+        <h3><i class="fas fa-terminal"></i> Data Log</h3>
+        <div class="log-box"></div>
+    </div>
+
+    <div class="mode-control">
+        <button class="mode-btn active">MANUAL</button>
+        <button class="mode-btn">AUTO</button>
+    </div>
+
+</div>
+
+</main>
+
+<script src="script.js"></script>
+</body>
+</html>

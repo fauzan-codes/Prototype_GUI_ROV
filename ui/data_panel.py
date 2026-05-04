@@ -1,16 +1,20 @@
-from PyQt5.QtWidgets import QWidget, QGridLayout, QLabel
+# ui/data_panel.py
+from PyQt5.QtWidgets import QLabel
+from ui.widget_card import WidgetCard
 
-class DataPanel(QWidget):
+
+class DataPanel(WidgetCard):
     def __init__(self):
-        super().__init__()
+        super().__init__("Depth")
 
-        self.layout = QGridLayout()
-        self.setLayout(self.layout)
+        self.value = QLabel("0 cm")
+        self.value.setStyleSheet("""
+            font-size: 28px;
+            font-weight: bold;
+            color: white;
+        """)
 
-        self.depth = QLabel("Depth: 0 cm")
-        self.heading = QLabel("Heading: 0°")
-        self.status = QLabel("System: OK")
+        self.body.addWidget(self.value)
 
-        self.layout.addWidget(self.depth, 0, 0)
-        self.layout.addWidget(self.heading, 0, 1)
-        self.layout.addWidget(self.status, 1, 0)
+    def update_data(self, depth, heading):
+        self.value.setText(f"{depth} cm")
