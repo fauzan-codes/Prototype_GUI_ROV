@@ -36,7 +36,7 @@ function initDepth() {
 }
 
 
-// TRAJECTORY CANVAS (ANTI ERROR)
+// TRAJECTORY CANVAS
 function initCanvas() {
     const canvas = document.getElementById("trajCanvas");
 
@@ -45,24 +45,47 @@ function initCanvas() {
         return;
     }
 
+    const parent = canvas.parentElement;
     const ctx = canvas.getContext("2d");
 
-    canvas.width = 300;
-    canvas.height = 300;
+    let x = 0;
+    let y = 0;
 
-    let x = 150, y = 150;
+    // === SET SIZE DARI CONTAINER ===
+    function resizeCanvas() {
+        const rect = parent.getBoundingClientRect();
+
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+
+        // reset posisi ke tengah
+        x = canvas.width / 2;
+        y = canvas.height / 2;
+    }
+
+    resizeCanvas();
+
+    // auto resize kalau window berubah
+    window.addEventListener("resize", resizeCanvas);
 
     function draw() {
+        // background
         ctx.fillStyle = "#04080f";
-        ctx.fillRect(0, 0, 300, 300);
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        // titik
         ctx.fillStyle = "cyan";
         ctx.beginPath();
         ctx.arc(x, y, 5, 0, Math.PI * 2);
         ctx.fill();
 
+        // gerakan random
         x += (Math.random() - 0.5) * 10;
         y += (Math.random() - 0.5) * 10;
+
+        // biar gak keluar frame
+        x = Math.max(0, Math.min(canvas.width, x));
+        y = Math.max(0, Math.min(canvas.height, y));
     }
 
     setInterval(draw, 100);
