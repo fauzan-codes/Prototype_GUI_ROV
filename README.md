@@ -1,36 +1,38 @@
 # 📘 ROV Ground Control Station (GCS)
-### PyQt Monitoring & Control System for ROV Competition
+### Web-Based Monitoring & Control System (FastAPI + WebSocket)
 
 ---
 
 # 🧭 0. Persiapan Awal (REAL WORLD SETUP)
 
-## 🪑 Setup Meja Kerja (GSC_ROV_Competition)
+## 🪑 Setup Meja Kerja (GSC_ROV_Competition - Web Version)
 
 ```text
-[ Laptop (GUI PyQt) ]
+[ Laptop (Browser UI) ]
         │
      (LAN Cable / Switch)
         │
-[ Mini PC di ROV ]
+[ Jetson / Mini PC di ROV (SERVER) ]
         │
  ├── Camera Front
  ├── Camera Bottom
+ ├── Pixhawk (MAVLink / Serial)
  ├── Sensor Depth
  ├── IMU (Optional)
  └── Power System
- ```
+```
 
 ---
 
 ## ✅ Checklist Hardware
 
- - Laptop (Ground Control Station)
- - Mini PC (ROV)
- - 2 Kamera (Front & Bottom)
- - Sensor Depth
- - Kabel LAN
- - Joystick (opsional tapi direkomendasikan)
+- Laptop (Ground Control Station - Browser)
+- Jetson / Mini PC (ROV - Server)
+- 2 Kamera (Front & Bottom)
+- Pixhawk (WAJIB untuk kontrol)
+- Sensor Depth
+- Kabel LAN / Switch / Router
+- Joystick (opsional)
 
 ---
 
@@ -38,17 +40,21 @@
 
 ## 🧰 Tools
 
- - Python 3.10+
- - VSCode / PyCharm
+- Python 3.10+
+- VSCode / PyCharm
+
+---
 
 ## 📁 Buat Project Folder
 
 ```
-mkdir GSC_ROV_Competition
-cd GSC_ROV_Competition
+mkdir GCS_ROV_Web
+cd GCS_ROV_Web
 ```
 
-## 🐍 Virtual Environmen
+---
+
+## 🐍 Virtual Environment
 
 ```
 python -m venv venv
@@ -60,10 +66,17 @@ Activate:
 venv\Scripts\activate
 ```
 
+---
+
 ## 📦 Install Dependencies
 
 ```
-pip install pyqt5 opencv-python numpy matplotlib pandas pygame
+pip install fastapi uvicorn opencv-python numpy websockets
+```
+
+(opsional)
+```
+pip install pymavlink
 ```
 
 ---
@@ -71,29 +84,23 @@ pip install pyqt5 opencv-python numpy matplotlib pandas pygame
 # 🧱 2. Struktur Project
 
 ```
-GSC_ROV_Competition/
+GCS_ROV_Web/
 │
-├── main.py
-│
-├── ui/
-│   ├── main_window.py
-│   ├── topbar.py
-│   ├── camera_panel.py
-│   ├── data_panel.py
-│   ├── trajectory_panel.py
-│   └── rov_model_panel.py
+├── main.py                # FastAPI server
 │
 ├── core/
-│   ├── network.py
-│   ├── data_handler.py
-│   ├── logger.py
-│   └── replay.py
+│   ├── camera.py         # Handle kamera
+│   ├── stream.py         # MJPEG streaming
+│   ├── websocket.py      # Realtime data
+│   └── pixhawk.py        # MAVLink communication
 │
 ├── vision/
 │   └── qr_detector.py
 │
-├── control/
-│   └── joystick.py
+├── static/
+│   ├── index.html        # UI dashboard
+│   ├── style.css
+│   └── app.js
 │
 ├── assets/
 │   └── rov.png
@@ -106,203 +113,206 @@ GSC_ROV_Competition/
 # 🧩 3. Fitur Utama
 
 ## 🎥 Camera System
- - Front Camera
- - Bottom Camera
+- Front Camera (MJPEG Stream)
+- Bottom Camera (opsional)
 
 ## 🔳 QR Detection
- - Posisi: A / B / C / D
- - Status: Valid / Invalid
+- Posisi: A / B / C / D
+- Status: Valid / Invalid
 
-## 📏 Altitude
- - Tinggi ROV dari dasar
+## 📏 Altitude / Depth
+- Data realtime dari sensor
 
 ## 🧾 Informasi Umum
- - Hari, tanggal, waktu
- - Nama tim
- - Nama universitas
+- Waktu realtime
+- Status koneksi
 
 ## 🤖 Visual ROV
- - Gambar ROV
- - Axis XYZ
+- Axis / indikator arah
 
 ## 🗺️ Trajectory
- - Start
- - Path
- - End
+- Path tracking (Canvas)
 
 ## 📸 Logging
- - Screenshot
- - Data Logging
-
-## ▶️ Replay
- - Video replay
- - Trajectory replay
+- Data logging (CSV / JSON)
 
 ## 🚨 Alarm
- - Kedalaman berbahaya
- - Error system
+- Depth warning
+- Error system
 
 ## 🎮 Mode Control
- - Manual (Keyboard / Joystick)
- - Autonomous
+- Manual (keyboard / joystick browser)
+- Autonomous (opsional)
 
 ---
 
 # 🪜 4. Step-by-Step Development
 
-## STEP 1 – Basic Window
+---
+
+## STEP 1 – FastAPI Basic Server
 
 ```
-import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from fastapi import FastAPI
 
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("ROV GCS")
-        self.setGeometry(100, 100, 1200, 800)
+app = FastAPI()
 
-app = QApplication(sys.argv)
-window = MainWindow()
-window.show()
-sys.exit(app.exec_())
+@app.get("/")
+def read_root():
+    return {"status": "server running"}
 ```
 
-## STEP 2 – Layout Utama
-
-Struktur layout:
-```
-TOPBAR
-MAIN DISPLAY (Camera + QR)
-DATA & VISUAL
-FOOTER
-```
-
-Gunakan:
- - QVBoxLayout
- - QGridLayout
-
-## STEP 3 – Top Bar (Realtime Info)
+Run:
 
 ```
-from datetime import datetime
-from PyQt5.QtCore import QTimer
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-## STEP 4 – Camera Display
+---
+
+## STEP 2 – MJPEG Camera Stream (WAJIB)
 
 ```
+from fastapi.responses import StreamingResponse
 import cv2
+
 cap = cv2.VideoCapture(0)
+
+def generate_frames():
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+
+        frame = cv2.resize(frame, (640, 360))
+
+        _, buffer = cv2.imencode('.jpg', frame,
+            [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+
+        frame = buffer.tobytes()
+
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' +
+               frame + b'\r\n')
+
+@app.get("/video")
+def video():
+    return StreamingResponse(generate_frames(),
+        media_type="multipart/x-mixed-replace; boundary=frame")
 ```
 
-Convert ke PyQt:
- - QImage
- - QLabel
-Gunakan QTimer untuk update frame
+---
 
-## STEP 5 – Network (LAN Communication)
+## STEP 3 – WebSocket Realtime Data
 
-Gunakan Socket (WAJIB)
 ```
-import socket
+from fastapi import WebSocket
+import asyncio
 
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect(("192.168.1.10", 5000))
-```
-
-## STEP 6 – Format Data
-
-Gunakan JSON:
-```
-{
-  "depth": 120,
-  "qr": "A",
-  "status": "valid",
-  "position": [1.2, 3.4, 0.5]
-}
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
+    while True:
+        data = {
+            "depth": 120,
+            "qr": "A",
+            "status": "connected"
+        }
+        await ws.send_json(data)
+        await asyncio.sleep(0.05)
 ```
 
-## STEP 7 – QR Detection
+---
+
+## STEP 4 – Frontend UI (Browser)
+
+### index.html
+
+```
+<img src="http://IP_JETSON:8000/video">
+```
+
+### WebSocket JS
+
+```
+const ws = new WebSocket("ws://IP_JETSON:8000/ws");
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    console.log(data);
+};
+```
+
+---
+
+## STEP 5 – QR Detection
 
 ```
 detector = cv2.QRCodeDetector()
 data, bbox, _ = detector.detectAndDecode(frame)
 ```
 
-## STEP 8 – Altitude Display
+---
+
+## STEP 6 – Pixhawk Communication
 
 ```
-self.label_depth.setText("120 cm")
+from pymavlink import mavutil
+
+master = mavutil.mavlink_connection('/dev/ttyUSB0', baud=115200)
 ```
 
-## STEP 9 – Trajectory Map
+---
 
-Gunakan matplotlib:
-```
-ax.plot(x, y)
-```
-
-## STEP 10 – Joystick Control
-
-Gunakan pygame:
-```
-import pygame
-pygame.joystick.init()
-```
-
-## STEP 11 – Logging
+## STEP 7 – Control dari Browser
 
 ```
-import pandas as pd
-df.to_csv("logs/data.csv")
+ws.send(JSON.stringify({
+    type: "control",
+    throttle: 0.5,
+    yaw: 10
+}));
 ```
 
-## STEP 12 – Screenshot
+---
+
+## STEP 8 – Logging
 
 ```
-QPixmap.grabWindow()
+import csv
 ```
 
-## STEP 13 – Replay System
+---
 
-```
-for row in log:
-    update_ui(row)
-```
-
-## STEP 14 – Alarm System
+## STEP 9 – Alarm System
 
 ```
 if depth > threshold:
-    play_sound()
+    trigger_alarm()
 ```
 
-## STEP 15 – Mode Control
-
-```
-MODE: MANUAL
-MODE: AUTO
-```
-
---- 
+---
 
 # 🔄 5. Alur Program
 
 ```
 START
  ↓
-Connect ke ROV
+SSH ke Jetson
  ↓
-Ambil data sensor
+Jalankan FastAPI Server
  ↓
-Ambil video stream
+Laptop buka Browser
  ↓
-Update UI
+Akses http://IP_JETSON:8000
  ↓
-User control input
+Stream kamera tampil
  ↓
-Kirim command ke ROV
+WebSocket kirim data realtime
+ ↓
+User input (control)
+ ↓
+Kirim ke Jetson → Pixhawk
  ↓
 Loop terus
 ```
@@ -312,44 +322,53 @@ Loop terus
 # ⚠️ 6. Best Practice
 
 ✅ Gunakan:
- - QTimer
- - Signal-Slot
- - Threading (camera & network)
+- WebSocket (realtime)
+- MJPEG untuk video
+- Resize frame (640x360)
+- FPS 10–20
+
 ❌ Hindari:
- - Blocking UI
- - Campur UI dengan logic
+- Kirim raw frame via JSON
+- Polling HTTP terus-menerus
+- Render UI di Jetson
+- Blocking loop
 
 ---
 
 # 🚀 7. Strategi Development
 
-Phase 1
- - UI + Dummy Data
+### Phase 1
+- FastAPI basic + dummy data
 
-Phase 2
- - Network (Socket)
+### Phase 2
+- MJPEG camera
 
-Phase 3
- - Camera
+### Phase 3
+- WebSocket data
 
-Phase 4
- - Control
+### Phase 4
+- QR detection
 
-Phase 5
- - Advanced (QR, Replay, dll)
+### Phase 5
+- Pixhawk control
+
+### Phase 6
+- UI dashboard full
 
 ---
 
 # 🔥 8. Tips Lomba
 
- - UI harus clean & informatif
- - Data real-time
- - Tidak lag
- - Tambahkan fitur unik:
-     - Auto QR tracking
-     - Compass visualization
-     - Warning system
-     - Replay timeline
+- Gunakan LAN (bukan internet)
+- UI ringan & jelas
+- Pastikan latency rendah
+- Test di kondisi real
+
+Tambahkan fitur:
+- Connection indicator
+- Auto reconnect
+- Warning system
+- Multi camera switch
 
 ---
 
@@ -357,11 +376,26 @@ Phase 5
 
 Project ini adalah:
 
-👉 Ground Control System (GCS) untuk ROV
-👉 Menggabungkan:
+👉 Ground Control System (GCS) berbasis Web  
+👉 Jetson sebagai **server (processing + data)**  
+👉 Laptop sebagai **client (UI di browser)**  
 
- - GUI
- - Networking
- - Computer Vision
- - Robotics Control
+Menggabungkan:
 
+- Web Technology (HTML, JS)
+- FastAPI (backend)
+- WebSocket (realtime)
+- Computer Vision (OpenCV)
+- Robotics Control (Pixhawk)
+
+---
+
+## 🔥 Insight Utama
+
+> ❌ Jangan render UI di Jetson  
+> ✅ Pindahkan UI ke browser  
+
+➡️ Hasil:
+- Lebih ringan  
+- Lebih realtime  
+- Lebih stabil  
