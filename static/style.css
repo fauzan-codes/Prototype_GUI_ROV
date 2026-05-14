@@ -1,36 +1,301 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+* {
+    border: none;
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+
 body {
-    background-color: #070b14;
-    color: #cdd8f0;
-    font-family: Consolas, monospace;
     margin: 0;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: 'Poppins', sans-serif;
 }
 
+/* HEADER */
 .header {
-    text-align: center;
-    padding: 20px;
-    border-bottom: 1px solid #1a3050;
-}
-
-.header h1 {
-    color: #00e5ff;
-    margin: 0;
-}
-
-.container {
     display: flex;
-    gap: 20px;
-    padding: 20px;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: #111827;
+    border-bottom: 1px solid #1f2937;
 }
 
+.title {
+    font-size: 20px;
+    color: #38bdf8;
+    font-weight: 600;
+}
+
+.subtitle {
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+/* MAIN */
+.main {
+    display: flex;
+    height: calc(100vh - 80px);
+    padding: 10px;
+    gap: 10px;
+}
+
+.col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.left { width: 50%; }
+.center { width: 25%; }
+.right { width: 25%; }
+
+/* CARD */
 .card {
-    background: #0c1a2e;
-    border: 1px solid #1a3050;
+    background: #111827;
+    border: 1px solid #1f2937;
     border-radius: 10px;
-    padding: 15px;
-    flex: 1;
+    padding: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
-.camera {
+.card h3 {
+    font-size: 12px;
+    font-weight: 600;
+    color: #38bdf8;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.8;
+
+    border-bottom: 1px solid #1f2937;
+    padding-bottom: 2px;
+    margin-bottom: 6px;
+}
+
+
+
+
+
+
+/* CAMERA GRID */
+.camera-grid {
+    display: flex;
+    gap: 8px;
+}
+
+/* CAMERA CARD */
+.camera-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.cam-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    padding: 0 6px;
+    color: #94a3b8;
+}
+
+/* CONTROL BUTTON */
+.cam-controls {
+    display: flex;
+    gap: 5px;
+}
+
+.cam-btn {
+    padding: 3px 6px;
+    font-size: 11px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background: #1f2937;
+    color: #e2e8f0;
+}
+
+.cam-btn:hover {
+    background: #334155;
+}
+
+
+/* ===== SWITCH CAMERA ===== */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+}
+
+.switch input {
+    display: none;
+}
+
+.switch .slider {
+    position: absolute;
+    inset: 0;
+    background-color: #1f2937;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: 0.25s;
+}
+
+.switch .slider::before {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    left: 3px;
+    top: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: 0.25s;
+}
+
+.switch input:checked + .slider {
+    background-color: #22c55e;
+}
+
+.switch input:checked + .slider::before {
+    transform: translateX(16px);
+}
+
+
+
+
+
+/* CAMERA BOX 4:3 FIX */
+.camera-box {
     width: 100%;
-    border-radius: 8px;
+    aspect-ratio: 4 / 3; 
+    background: #020617;
+    border-radius: 6px;
+    border: 1px solid #1f2937;
+    overflow: hidden;
+    position: relative;
+}
+
+/* VIDEO / IMG */
+.camera-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none; /* default hidden */
+}
+
+.camera-box img.active {
+    display: block;
+}
+
+
+
+
+
+
+/* QR */
+.qr-box {
+    margin-top: 8px;
+    height: 80px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 6px;
+    background: #020617;
+    border: 1px solid #1f2937;
+    color: #94a3b8;
+}
+
+/* TELEMETRY */
+.telemetry {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.telemetry div {
+    background: #020617;
+    padding: 6px;
+    border-radius: 6px;
+    border: 1px solid #1f2937;
+    font-size: 12px;
+}
+
+/* DEPTH */
+.depth-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.depth-bar {
+    width: 40px;
+    height: 200px;
+    border-radius: 6px;
+    background: #020617;
+    border: 1px solid #1f2937;
+    overflow: hidden;
+    position: relative;
+}
+
+#depth-fill {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 30%;
+    background: linear-gradient(to top, #38bdf8, #0ea5e9);
+}
+
+.depth-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    font-size: 13px;
+    color: #e2e8f0;
+}
+
+/* BUTTON */
+.btn {
+    margin-top: 6px;
+    padding: 8px;
+    background: #1f2937;
+    border: none;
+    border-radius: 6px;
+    color: #e2e8f0;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.btn:hover {
+    background: #334155;
+}
+
+/* START / STOP */
+.start {
+    background: #16a34a;
+}
+.start:hover {
+    background: #22c55e;
+}
+
+.stop {
+    background: #dc2626;
+}
+.stop:hover {
+    background: #ef4444;
+}
+
+/* LOG */
+.log-box {
+    height: 150px;
+    background: #020617;
+    border-radius: 6px;
+    border: 1px solid #1f2937;
+    overflow-y: auto;
+    padding: 6px;
+    font-size: 12px;
 }
