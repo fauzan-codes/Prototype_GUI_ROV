@@ -1,0 +1,36 @@
+body {
+    background-color: #070b14;
+    color: #cdd8f0;
+    font-family: Consolas, monospace;
+    margin: 0;
+}
+
+.header {
+    text-align: center;
+    padding: 20px;
+    border-bottom: 1px solid #1a3050;
+}
+
+.header h1 {
+    color: #00e5ff;
+    margin: 0;
+}
+
+.container {
+    display: flex;
+    gap: 20px;
+    padding: 20px;
+}
+
+.card {
+    background: #0c1a2e;
+    border: 1px solid #1a3050;
+    border-radius: 10px;
+    padding: 15px;
+    flex: 1;
+}
+
+.camera {
+    width: 100%;
+    border-radius: 8px;
+}

@@ -114,7 +114,8 @@ GCS_ROV_Web/
 
 ## 🎥 Camera System
 - Front Camera (MJPEG Stream)
-- Bottom Camera (opsional)
+- Bottom Camera
+- rasio 4:3
 
 ## 🔳 QR Detection
 - Posisi: A / B / C / D

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GCS ROV</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <div class="header">
+        <h1>ROV GROUND CONTROL STATION</h1>
+        <p>Monitoring & Control System</p>
+    </div>
+
+    <div class="container">
+
+        <!-- CAMERA -->
+        <div class="card">
+            <h2>Camera Feed</h2>
+            <img src="/video" class="camera">
+        </div>
+
+        <!-- DATA -->
+        <div class="card">
+            <h2>Telemetry</h2>
+            <p>Depth: <span id="depth">---</span> cm</p>
+            <p>QR: <span id="qr">---</span></p>
+            <p>Status: <span id="status">---</span></p>
+        </div>
+
+    </div>
+
+</body>
+</html>
