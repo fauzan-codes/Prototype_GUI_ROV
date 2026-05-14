@@ -15,38 +15,105 @@ body {
     font-family: 'Poppins', sans-serif;
 }
 
-/* HEADER */
+
+
+
+/* ===== HEADER ===== */
 .header {
-    display: flex;
-    justify-content: space-between;
-    padding: 12px 24px;
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    align-items: center;
+
+    padding: 10px 20px;
+
+    /* background: linear-gradient(
+        to right,
+        #020617,
+        #0b1a2e 25%,
+        #0b1a2e 75%,
+        #020617
+    ); */
     background: #111827;
-    border-bottom: 1px solid #1f2937;
+
+    border-bottom: 2px solid #1f2937;
+}
+
+/* LEFT */
+.header-left {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.univ {
+    font-size: 11px;
+    font-weight: 600;
+    color: #38bdf8;
+    letter-spacing: 1px;
+}
+
+#datetime {
+    font-size: 10px;
+    color: #64748b;
+}
+
+/* CENTER */
+.header-center {
+    text-align: center;
 }
 
 .title {
     font-size: 20px;
-    color: #38bdf8;
-    font-weight: 600;
+    font-weight: 700;
+    color: #00e5ff;
+    letter-spacing: 3px;
+    white-space: pre;
 }
 
 .subtitle {
-    font-size: 11px;
-    color: #94a3b8;
+    font-size: 10px;
+    color: #475569;
+    letter-spacing: 2px;
 }
+
+/* RIGHT */
+.header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.team {
+    font-size: 11px;
+    font-weight: 600;
+    color: #38bdf8;
+    letter-spacing: 1px;
+}
+
+#mode {
+    font-size: 10px;
+    color: #22c55e;
+}
+
+#status {
+    font-size: 10px;
+    color: #64748b;
+}
+
+
 
 /* MAIN */
 .main {
     display: flex;
     height: calc(100vh - 80px);
-    padding: 10px;
-    gap: 10px;
+    padding: 8px;
+    gap: 8px;
 }
 
 .col {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
 }
 
 .left { width: 50%; }
@@ -63,7 +130,7 @@ body {
 }
 
 .card h3 {
-    font-size: 12px;
+    font-size: 8px;
     font-weight: 600;
     color: #38bdf8;
     letter-spacing: 1px;
@@ -98,7 +165,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 12px;
+    font-size: 10px;
     padding: 0 6px;
     color: #94a3b8;
 }
@@ -106,7 +173,7 @@ body {
 /* CONTROL BUTTON */
 .cam-controls {
     display: flex;
-    gap: 5px;
+    gap: 6px;
 }
 
 .cam-btn {
@@ -169,10 +236,10 @@ body {
 
 
 
-/* CAMERA BOX 4:3 FIX */
+/* CAMERA BOX */
 .camera-box {
     width: 100%;
-    aspect-ratio: 4 / 3; 
+    aspect-ratio: 3/4; 
     background: #020617;
     border-radius: 6px;
     border: 1px solid #1f2937;
@@ -185,7 +252,7 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    display: none; /* default hidden */
+    display: none; 
 }
 
 .camera-box img.active {
@@ -210,20 +277,120 @@ body {
     color: #94a3b8;
 }
 
+
+
+
 /* TELEMETRY */
 .telemetry {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
 }
 
 .telemetry div {
     background: #020617;
-    padding: 6px;
+    padding: 5px 6px;
+    border-radius: 6px;
+
+    border: 1px solid #1f2937;
+
+    font-size: 10px;
+    font-weight: 500;
+    text-align: left;
+
+    color: #cbd5f5; 
+}
+
+
+
+
+/* ===== TOP ROW (DEPTH + TRAJECTORY) ===== */
+.row-top {
+    display: flex;
+    gap: 8px;
+}
+
+/* DEPTH */
+.depth-card {
+    width: 20%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.depth-card h3 {
+    width: 100%;
+    text-align: left;
+}
+
+.depth-container {
+    margin-top: 6px;
+}
+
+.depth-info-bottom {
+    width: 45px;
+    margin-top: 8px;
+    font-size: 10px;
+    text-align: left;
+    color: #94a3b8;
+}
+
+/* TRAJECTORY */
+.traj-card {
+    width: 80%;
+}
+
+.traj-box {
+    width: 100%;
+    height: 93%;
+    background: #020617;
     border-radius: 6px;
     border: 1px solid #1f2937;
-    font-size: 12px;
 }
+
+/* ===== ROV DESIGN ===== */
+.design-card {
+    width: 100%;
+}
+
+/* 1:1 RATIO */
+.design-box {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+
+    background: #020617;
+    border-radius: 6px;
+    border: 1px solid #1f2937;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    position: relative;
+    overflow: hidden;
+}
+
+/* IMAGE */
+.design-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: none; 
+}
+
+
+#rov-placeholder {
+    position: absolute;
+    font-size: 12px;
+    color: #475569;
+    letter-spacing: 2px;
+
+    opacity: 1;
+    transition: 0.3s;
+}
+
+
+
 
 /* DEPTH */
 .depth-container {

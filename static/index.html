@@ -20,8 +20,8 @@
     </div>
 
     <div class="header-center">
-        <div class="title">◈ ROV GROUND CONTROL STATION ◈</div>
-        <div class="subtitle">MONITORING & CONTROL</div>
+        <div class="title">◈   ROV GROUND CONTROL STATION   ◈</div>
+        <div class="subtitle">REMOTELY OPERATED VEHICLE  ·  MONITORING & CONTROL</div>
     </div>
 
     <div class="header-right">
@@ -90,10 +90,21 @@
         <div class="card">
             <h3>TELEMETRY</h3>
             <div class="telemetry">
-                <div>SETPOINT: ---</div>
-                <div>HEIGHT: ---</div>
-                <div>HEADING: ---</div>
-                <div>PRESSURE: ---</div>
+
+                <!-- MAIN DATA -->
+                <div id="t_setpoint">SETPOINT: ---</div>
+                <div id="t_height">HEIGHT: ---</div>
+                <div id="t_heading">HEADING: ---</div>
+                <div id="t_pressure">PRESSURE: ---</div>
+
+                <!-- PWM -->
+                <div id="t_pwm1">PWM1: ---</div>
+                <div id="t_pwm2">PWM2: ---</div>
+                <div id="t_pwm3">PWM3: ---</div>
+                <div id="t_pwm4">PWM4: ---</div>
+                <div id="t_pwm5">PWM5: ---</div>
+                <div id="t_pwm6">PWM6: ---</div>
+
             </div>
         </div>
 
@@ -102,25 +113,46 @@
     <!-- CENTER -->
     <div class="col center">
 
-        <div class="card">
-            <h3>DEPTH</h3>
-            <div class="depth-container">
-                <div class="depth-bar">
-                    <div id="depth-fill"></div>
+        <div class="row-top">
+
+            <!-- DEPTH -->
+            <div class="card depth-card">
+                <h3>DEPTH</h3>
+
+                <div class="depth-container">
+                    <div class="depth-bar">
+                        <div id="depth-fill"></div>
+                    </div>
                 </div>
-                <div class="depth-info">
+
+                <div class="depth-info-bottom">
                     <p>D: ---</p>
                     <p>H: ---</p>
                     <p>SP: ---</p>
                 </div>
             </div>
+
+            <!-- TRAJECTORY -->
+            <div class="card traj-card">
+                <h3>TRAJECTORY</h3>
+                <div class="traj-box">
+                    <canvas id="trajCanvas"></canvas>
+                </div>
+            </div>
+
         </div>
 
-        <div class="card">
-            <h3>TRAJECTORY</h3>
-            <canvas id="trajCanvas"></canvas>
+        <!-- MIDDLE: ROV DESIGN -->
+        <div class="card design-card">
+            <h3>ROV DESIGN</h3>
+
+            <div class="design-box">
+                <img id="rov-img" src="/assets/rov2.png" alt="">
+                <span id="rov-placeholder">ROV DESIGN</span>
+            </div>
         </div>
 
+        <!-- BOTTOM: OPERATIONS -->
         <div class="card">
             <h3>OPERATIONS</h3>
             <button class="btn start">START</button>
