@@ -155,14 +155,12 @@ async def websocket_endpoint(ws: WebSocket):
     while True:
         msg = None
 
-        # ===== TERIMA DATA =====
         try:
             recv = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
             msg = json.loads(recv)
         except:
             pass
 
-        # ===== HANDLE MESSAGE =====
         if msg:
             if msg.get("type") == "pid":
                 kp = msg.get("kp")
@@ -172,7 +170,7 @@ async def websocket_endpoint(ws: WebSocket):
                 add_log(f"[PID] Kp={kp} Ki={ki} Kd={kd}")
 
             elif msg.get("type") == "log":
-                add_log(msg.get("message"))  # langsung pakai
+                add_log(msg.get("message"))
 
         # ===== TELEMETRY =====
         data = {
@@ -183,12 +181,10 @@ async def websocket_endpoint(ws: WebSocket):
             "pwm": [random.randint(1000, 2000) for _ in range(6)]
         }
 
-        # ===== AMBIL LOG =====
         log = None
         if log_buffer:
             log = log_buffer.popleft()
 
-        # ===== KIRIM =====
         await ws.send_json({
             "telemetry": data,
             "log": log

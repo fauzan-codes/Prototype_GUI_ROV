@@ -1,4 +1,5 @@
 const camTimeouts = {};
+let activeFullscreenCam = null;
 
 let ws = null;
 
@@ -16,6 +17,25 @@ document.addEventListener("DOMContentLoaded", () => {
     initROVImage();
     initModeSystem();
     initJoystick();
+});
+
+// FULLSCREEN EVENTS
+document.addEventListener("DOMContentLoaded", () => {
+    const overlay = document.getElementById("fullscreenOverlay");
+    const content = document.getElementById("fullscreenContent");
+
+    overlay.addEventListener("click", (e) => {
+        if (!content.contains(e.target)) {
+            closeFullscreenCam();
+        }
+    });
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            closeFullscreenCam();
+        }
+    });
+
 });
 
 
@@ -208,6 +228,43 @@ function captureCam(id) {
     link.download = "capture_cam" + id + ".jpg";
     link.click();
 }
+
+function openFullscreenCam(id) {
+
+    const sourceImg = document.getElementById("cam" + id);
+
+    // CAMERA OFF
+    if (!sourceImg || !sourceImg.src) {
+        return;
+    }
+
+    const overlay = document.getElementById("fullscreenOverlay");
+    const fullscreenImg = document.getElementById("fullscreenImage");
+
+    // COPY STREAM
+    fullscreenImg.src = sourceImg.src;
+
+    // SHOW POPUP
+    overlay.classList.add("active");
+
+    activeFullscreenCam = id;
+
+    document.body.style.overflow = "hidden";
+}
+
+
+function closeFullscreenCam() {
+
+    const overlay = document.getElementById("fullscreenOverlay");
+
+    overlay.classList.remove("active");
+
+    activeFullscreenCam = null;
+
+    document.body.style.overflow = "";
+}
+
+
 
 
 

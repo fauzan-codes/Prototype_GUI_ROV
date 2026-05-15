@@ -54,6 +54,11 @@
                             <button class="cam-btn capture" onclick="captureCam(1)">
                                 <i class="fa-solid fa-camera"></i>
                             </button>
+                            <button class="cam-btn fullscreen-btn"
+                                    id="fullscreenBtn1"
+                                    onclick="openFullscreenCam(1)">
+                                <i class="fa-solid fa-expand"></i>
+                            </button>
                         </div>
                     </div>
 
@@ -77,6 +82,11 @@
                             </label>
                             <button class="cam-btn capture" onclick="captureCam(2)">
                                 <i class="fa-solid fa-camera"></i>
+                            </button>
+                            <button class="cam-btn fullscreen-btn"
+                                    id="fullscreenBtn2"
+                                    onclick="openFullscreenCam(2)">
+                                <i class="fa-solid fa-expand"></i>
                             </button>
                         </div>
                     </div>
@@ -343,6 +353,28 @@
 
     </div>
 
+</div>
+
+
+<!-- ========== FULLSCREEN CAMERA POPUP ========== -->
+<div class="fullscreen-overlay" id="fullscreenOverlay">
+    <div class="fullscreen-content" id="fullscreenContent">
+
+        <div class="fullscreen-header">
+            <div class="fullscreen-title" id="fullscreenTitle">
+                CAMERA FULLSCREEN
+            </div>
+            <button class="fullscreen-close"
+                    onclick="closeFullscreenCam()">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="fullscreen-camera-wrapper">
+            <img id="fullscreenImage" alt="">
+        </div>
+
+    </div>
 </div>
 
 <script src="/static/script.js"></script>
