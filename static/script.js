@@ -11,7 +11,6 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("JS LOADED");
 
     loadConfig();
-    initClock();
     initCanvas();
     initWebSocket();
     initROVImage();
@@ -60,16 +59,6 @@ function loadConfig() {
 }
 
 
-// CLOCK
-function initClock() {
-    setInterval(() => {
-        const now = new Date();
-        const el = document.getElementById("datetime");
-        if (el) {
-            el.innerText = now.toLocaleString();
-        }
-    }, 1000);
-}
 
 
 // TRAJECTORY CANVAS
@@ -233,22 +222,35 @@ function toggleCam(id, el) {
     }
 }
 
-function captureCam(id) {
-    const img = document.getElementById("cam" + id);
+async function captureCam(id) {
+    const btn = document.querySelectorAll(".capture")[id - 1];
+    try {
 
-    if (!img || !img.src) {
-        alert("Camera belum ON!");
-        return;
+        btn.disabled = true;
+        const response = await fetch(`/capture/${id - 1}`, {
+            method: "POST"
+        });
+
+        const result = await response.json();
+        if (!result.success) {
+            sendLogToBackend(`[CAPTURE] FAILED CAM ${id}`);
+            return;
+        }
     }
 
-    const link = document.createElement("a");
-    link.href = img.src;
-    link.download = "capture_cam" + id + ".jpg";
-    link.click();
+    catch (err) {
+        console.error(err);
+        sendLogToBackend(`[CAPTURE] ERROR CAM ${id}`);
+    }
+
+    finally {
+        setTimeout(() => {
+            btn.disabled = false;
+        }, 500);
+    }
 }
 
 function openFullscreenCam(id) {
-
     const sourceImg = document.getElementById("cam" + id);
 
     // CAMERA OFF
@@ -264,21 +266,15 @@ function openFullscreenCam(id) {
 
     // SHOW POPUP
     overlay.classList.add("active");
-
     activeFullscreenCam = id;
-
     document.body.style.overflow = "hidden";
 }
 
 
 function closeFullscreenCam() {
-
     const overlay = document.getElementById("fullscreenOverlay");
-
     overlay.classList.remove("active");
-
     activeFullscreenCam = null;
-
     document.body.style.overflow = "";
 }
 
@@ -293,6 +289,9 @@ function initWebSocket() {
     ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         const data = msg.telemetry;
+
+        // DATETIME
+        document.getElementById("datetime").innerText = msg.datetime;
 
         // TELEMETRY
         document.getElementById("t_setpoint").innerText = "SETPOINT: " + data.setpoint;
@@ -489,12 +488,9 @@ function syncPID(slider, id) {
 // LOG
 function addLog(text) {
     const box = document.getElementById("logBox");
-
     const line = document.createElement("div");
-    const time = new Date().toLocaleTimeString();
-
-    line.innerText = `[${time}] ${text}`;
-
+    
+    line.innerText = text;
     box.appendChild(line);
     box.scrollTop = box.scrollHeight;
 }

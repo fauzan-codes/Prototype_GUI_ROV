@@ -2,11 +2,14 @@ from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, FileResponse
 from collections import deque
+from datetime import datetime
+from pathlib import Path
 import asyncio
 import random
 import threading
 import json
 import cv2
+import os
 
 
 log_buffer = deque(maxlen=100)
@@ -42,6 +45,10 @@ app = FastAPI()
 shutdown_event = threading.Event()
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# folder
+CAPTURE_DIR = Path("data/capture")
+CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================== ROOT ==============================
@@ -81,6 +88,12 @@ class Camera:
             return None
 
         frame = cv2.resize(frame, (640, 480))
+        return frame
+    
+    def capture(self):
+        frame = self.read()
+        if frame is None:
+            return None
         return frame
 
     def release(self):
@@ -148,10 +161,54 @@ def video(cam_id: int):
     )
 
 
+@app.post("/capture/{cam_id}")
+def capture_camera(cam_id: int):
+    cam = cams.get(cam_id)
+
+    if cam is None:
+        return {
+            "success": False,
+            "message": "Camera not found"
+        }
+
+    cam.open()
+    frame = cam.capture()
+    if frame is None:
+        return {
+            "success": False,
+            "message": "Failed to capture image"
+        }
+
+    date_str = datetime.now().strftime("%d-%m-%Y")
+    existing_files = list(
+        CAPTURE_DIR.glob(f"capture_cam{cam_id + 1}_{date_str}_*.jpg")
+    )
+
+    next_number = len(existing_files) + 1
+    filename = (
+        f"capture_cam{cam_id + 1}_"
+        f"{date_str}_"
+        f"{next_number:03d}.jpg"
+    )
+
+    save_path = CAPTURE_DIR / filename
+    cv2.imwrite(str(save_path), frame)
+    add_log(f"[CAPTURE] Saved {filename}")
+
+    return {
+        "success": True,
+        "filename": filename,
+        "path": str(save_path)
+    }
+
+
 # ============================== WEBSOCKET ==============================
 def add_log(message):
-    print(message)
-    log_buffer.append(message)
+    now = datetime.now()
+    timestamp = now.strftime("%H:%M:%S")
+    final_log = f"[{timestamp}] {message}"
+    print(final_log)
+    log_buffer.append(final_log)
 
 
 @app.websocket("/ws")
@@ -190,10 +247,14 @@ async def websocket_endpoint(ws: WebSocket):
         log = None
         if log_buffer:
             log = log_buffer.popleft()
+        
+        now = datetime.now()
+        formatted_time = now.strftime("%A, %d %b %Y - %H:%M:%S")
 
         await ws.send_json({
             "telemetry": data,
-            "log": log
+            "log": log,
+            "datetime": formatted_time
         })
 
         await asyncio.sleep(0.1)
