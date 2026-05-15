@@ -1,5 +1,4 @@
 
-// INIT APP (PASTIKAN DOM SIAP)
 document.addEventListener("DOMContentLoaded", () => {
     console.log("JS LOADED");
 
@@ -172,6 +171,8 @@ function syncPID(slider, id) {
     document.getElementById(id).value = value;
 }
 
+
+// LOG
 function addLog(text) {
     const box = document.getElementById("logBox");
 

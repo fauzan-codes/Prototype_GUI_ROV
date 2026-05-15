@@ -28,7 +28,7 @@ body {
     grid-template-columns: 1fr 2fr 1fr;
     align-items: center;
 
-    padding: 10px 20px;
+    padding: 0.625rem 1.25rem;
 
     /* background: linear-gradient(
         to right,
@@ -39,10 +39,9 @@ body {
     ); */
     background: #111827;
 
-    border-bottom: 2px solid #1f2937;
+    border-bottom: 0.125rem solid #1f2937;
 }
 
-/* LEFT */
 .header-left {
     display: flex;
     flex-direction: column;
@@ -50,37 +49,35 @@ body {
 }
 
 .univ {
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 600;
     color: #38bdf8;
     letter-spacing: 1px;
 }
 
 #datetime {
-    font-size: 10px;
+    font-size: 0.625rem;
     color: #64748b;
 }
 
-/* CENTER */
 .header-center {
     text-align: center;
 }
 
 .title {
-    font-size: 20px;
+    font-size: 1.25rem;
     font-weight: 700;
     color: #00e5ff;
-    letter-spacing: 3px;
+    letter-spacing: 0.19rem;
     white-space: pre;
 }
 
 .subtitle {
-    font-size: 10px;
+    font-size: 0.625rem;
     color: #475569;
-    letter-spacing: 2px;
+    letter-spacing: 0.125rem;
 }
 
-/* RIGHT */
 .header-right {
     display: flex;
     flex-direction: column;
@@ -88,36 +85,37 @@ body {
 }
 
 .team {
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 600;
     color: #38bdf8;
     letter-spacing: 1px;
 }
 
 #mode {
-    font-size: 10px;
+    font-size: 0.625rem;
     color: #22c55e;
 }
 
 #status {
-    font-size: 10px;
+    font-size: 0.625rem;
     color: #64748b;
 }
+
 
 
 
 /* MAIN */
 .main {
     display: flex;
-    height: calc(100vh - 80px);
-    padding: 8px;
-    gap: 8px;
+    height: calc(100vh - 5rem);
+    padding: 0.5rem;
+    gap: 0.5rem;
 }
 
 .col {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0.5rem;
 }
 
 .left { width: 50%; }
@@ -126,17 +124,18 @@ body {
 
 
 
+
 /* CARD */
 .card {
     background: #111827;
     border: 1px solid #1f2937;
-    border-radius: 10px;
-    padding: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    border-radius: 0.625rem;
+    padding: 0.5rem;
+    box-shadow: 0 0.25rem 0.6875rem rgba(0,0,0,0.3);
 }
 
 .card h3 {
-    font-size: 8px;
+    font-size: 0.5rem;
     font-weight: 600;
     color: #38bdf8;
     letter-spacing: 1px;
@@ -144,29 +143,31 @@ body {
     opacity: 0.8;
 
     border-bottom: 1px solid #1f2937;
-    padding-bottom: 2px;
-    margin-bottom: 6px;
+    padding-bottom: 0.125rem;
+    margin-bottom: 0.375rem;
 }
+
+
 
 
 /* BASE BUTTON  */
 .btn {
-    padding: 6px 10px;
-    font-size: 10px;
+    padding: 0.375rem 0.625rem;
+    font-size: 0.625rem;
     font-family: 'Poppins', sans-serif;
 
     background: #0c1e33;
     color: #cbd5f5;
 
     border: 1px solid #1a3050;
-    border-radius: 6px;
+    border-radius: 0.375rem;
 
     cursor: pointer;
 
     transition: 0.2s ease;
     letter-spacing: 0.5px;
 
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    box-shadow: 0 0.125rem 0.375rem rgba(0,0,0,0.3);
 }
 
 .btn:hover {
@@ -192,7 +193,7 @@ body {
 /* CAMERA GRID */
 .camera-grid {
     display: flex;
-    gap: 8px;
+    gap: 0.5rem;
 }
 
 /* CAMERA CARD */
@@ -200,29 +201,29 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 0.375rem;
 }
 
 .cam-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 10px;
-    padding: 0 6px;
+    font-size: 0.625rem;
+    padding: 0 0.375rem;
     color: #94a3b8;
 }
 
 /* CONTROL BUTTON */
 .cam-controls {
     display: flex;
-    gap: 6px;
+    gap: 0.375rem;
 }
 
 .cam-btn {
-    padding: 3px 6px;
-    font-size: 11px;
+    padding: 3px 0.375rem;
+    font-size: 0.6875rem;
     border: none;
-    border-radius: 4px;
+    border-radius: 0.25rem;
     cursor: pointer;
     background: #1f2937;
     color: #e2e8f0;
@@ -283,7 +284,7 @@ body {
     width: 100%;
     aspect-ratio: 3/4; 
     background: #020617;
-    border-radius: 6px;
+    border-radius: 0.375rem;
     border: 1px solid #1f2937;
     overflow: hidden;
     position: relative;
@@ -308,12 +309,12 @@ body {
 
 /* QR */
 .qr-box {
-    margin-top: 8px;
+    margin-top: 0.5rem;
     height: 80px;
     display: flex;
     justify-content: center;
     align-items: center;
-    border-radius: 6px;
+    border-radius: 0.375rem;
     background: #020617;
     border: 1px solid #1f2937;
     color: #94a3b8;
@@ -326,17 +327,17 @@ body {
 .telemetry {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 6px;
+    gap: 0.375rem;
 }
 
 .telemetry div {
     background: #020617;
-    padding: 5px 6px;
-    border-radius: 6px;
+    padding: 0.3125rem 0.375rem;
+    border-radius: 0.375rem;
 
     border: 1px solid #1f2937;
 
-    font-size: 10px;
+    font-size: 0.625rem;
     font-weight: 500;
     text-align: left;
 
@@ -349,7 +350,7 @@ body {
 /* ===== TOP ROW (DEPTH + TRAJECTORY) ===== */
 .row-top {
     display: flex;
-    gap: 8px;
+    gap: 0.5rem;
 }
 
 /* DEPTH */
@@ -370,13 +371,13 @@ body {
 .depth-container {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 0.625rem;
 }
 
 .depth-bar {
     width: 40px;
     height: 200px;
-    border-radius: 6px;
+    border-radius: 0.375rem;
     background: #020617;
     border: 1px solid #1f2937;
     overflow: hidden;
@@ -392,9 +393,9 @@ body {
 }
 
 .depth-info-bottom {
-    width: 45px;
-    margin-top: 8px;
-    font-size: 10px;
+    width: 2.8125rem;
+    margin-top: 0.5rem;
+    font-size: 0.625rem;
     text-align: left;
     color: #94a3b8;
 }
@@ -408,7 +409,7 @@ body {
     width: 90%;
     height: 90%;
     background: #020617;
-    border-radius: 6px;
+    border-radius: 0.375rem;
     border: 1px solid #1f2937;
 }
 
@@ -416,7 +417,7 @@ body {
     width: 100%;
     height: 100%;
     display: block;
-    border-radius: 6px;
+    border-radius: 0.375rem;
 }
 
 /* ===== ROV DESIGN ===== */
@@ -437,7 +438,7 @@ body {
     aspect-ratio: 1 / 1;
 
     background: #020617;
-    border-radius: 6px;
+    border-radius: 0.375rem;
     border: 1px solid #1f2937;
 
     display: flex;
@@ -459,9 +460,9 @@ body {
 
 #rov-placeholder {
     position: absolute;
-    font-size: 12px;
+    font-size: 0.6875rem;
     color: #475569;
-    letter-spacing: 2px;
+    letter-spacing: 0.125rem;
 
     opacity: 1;
     transition: 0.3s;
@@ -498,17 +499,17 @@ body {
 .pid-grid {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0.5rem;
 }
 
 .pid-item {
     background: #0b1220;
     border: 1px solid #1e293b;
-    border-radius: 10px;
-    padding: 6px 6px 6px 8px;
+    border-radius: 0.625rem;
+    padding: 0.375rem 0.375rem 0.375rem 0.5rem;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0.5rem;
 
     transition: 0.2s ease;
 }
@@ -525,8 +526,8 @@ body {
 }
 
 .pid-label {
-    padding-left: 2px;
-    font-size: 12px;
+    padding-left: 0.125rem;
+    font-size: 0.6875rem;
     font-weight: 700;
 
     color: #38bdf8;
@@ -537,12 +538,12 @@ body {
     width: 100px;
     background: #020617;
     border: 1px solid #1f2937;
-    border-radius: 6px;
-    padding: 5px 8px;
+    border-radius: 0.375rem;
+    padding: 0.3125rem 0.5rem;
 
     color: #e2e8f0;
 
-    font-size: 10px;
+    font-size: 0.625rem;
     font-family: inherit;
     text-align: left;
 
@@ -565,7 +566,7 @@ body {
 
 .pid-slider {
     width: 100%;
-    height: 5px;
+    height: 0.3125rem;
 
     appearance: none;
 
@@ -584,9 +585,9 @@ body {
     border-radius: 50%;
 
     background: #38bdf8;
-    border: 2px solid #020617;
+    border: 0.125rem solid #020617;
 
-    box-shadow: 0 0 10px rgba(56,189,248,0.5);
+    box-shadow: 0 0 0.625rem rgba(56,189,248,0.5);
 }
 
 .pid-slider::-moz-range-thumb {
@@ -610,9 +611,9 @@ body {
 }
 
 .pid-actions {
-    margin-top: 8px;
+    margin-top: 0.5rem;
     display: flex;
-    gap: 8px;
+    gap: 0.5rem;
 }
 
 .pid-reset {
@@ -631,7 +632,7 @@ body {
 
     color: #e0f2fe;
     font-weight: 600;
-    letter-spacing: 0.6px;
+    letter-spacing: 0.375rem;
 
     border: 1px solid #1d4f73;
 
@@ -643,7 +644,7 @@ body {
 
     box-shadow:
         0 0 0 rgba(56,189,248,0),
-        0 2px 8px rgba(0,0,0,0.35);
+        0 0.125rem 0.5rem rgba(0,0,0,0.35);
 }
 
 .pid-send:hover {
@@ -653,8 +654,8 @@ body {
     color: white;
 
     box-shadow:
-        0 0 12px rgba(56,189,248,0.35),
-        0 2px 10px rgba(0,0,0,0.4);
+        0 0 0.6875rem rgba(56,189,248,0.35),
+        0 0.125rem 0.625rem rgba(0,0,0,0.4);
 }
 
 .pid-send:active {
@@ -673,13 +674,13 @@ body {
     height: 170px;
     background: #020617;
     border: 1px solid #1f2937;
-    border-radius: 6px;
+    border-radius: 0.375rem;
 
-    padding: 6px;
+    padding: 0.375rem;
     overflow-y: auto;
 
     font-family: "Consolas", monospace;
-    font-size: 10px;
+    font-size: 0.625rem;
 
     color: #39ff14;
     line-height: 1.4;
@@ -697,7 +698,7 @@ body {
 
 .log-box::-webkit-scrollbar-track {
     background: #020617;
-    border-radius: 10px;
+    border-radius: 0.625rem;
 }
 
 .log-box::-webkit-scrollbar-thumb {
@@ -707,7 +708,7 @@ body {
         #0284c7
     );
 
-    border-radius: 10px;
+    border-radius: 0.625rem;
     border: 1px solid #0f172a;
 }
 
@@ -727,8 +728,8 @@ body {
 
 .log-controls {
     display: flex;
-    gap: 6px;
-    margin-top: 6px;
+    gap: 0.375rem;
+    margin-top: 0.375rem;
 }
 
 
@@ -736,12 +737,12 @@ body {
 .adv-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
+    gap: 0.375rem;
 }
 
 .adv-card .btn {
-    font-size: 10px;
-    padding: 6px;
+    font-size: 0.625rem;
+    padding: 0.375rem;
 }
 
 
