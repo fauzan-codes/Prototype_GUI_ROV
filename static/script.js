@@ -17,6 +17,9 @@ document.addEventListener("DOMContentLoaded", () => {
     initROVImage();
     initModeSystem();
     initJoystick();
+
+    setCameraButtons(1, false);
+    setCameraButtons(2, false);
 });
 
 // FULLSCREEN EVENTS
@@ -128,6 +131,16 @@ function initCanvas() {
 
 
 // CAMERA CONTROL
+function setCameraButtons(id, enabled) {
+    const card = document.querySelectorAll(".camera-card")[id - 1];
+    if (!card) return;
+
+    const captureBtn = card.querySelector(".capture");
+    const fullscreenBtn = card.querySelector(".fullscreen-btn");
+    captureBtn.disabled = !enabled;
+    fullscreenBtn.disabled = !enabled;
+}
+
 function toggleCam(id, el) {
     const img = document.getElementById("cam" + id);
     const box = img.closest(".camera-box");
@@ -149,6 +162,7 @@ function toggleCam(id, el) {
     setTimeout(() => el.disabled = false, 500);
 
     if (el.checked) {
+        setCameraButtons(id, false);
         img.dataset.state = "loading";
 
         placeholder.innerText = "CONNECTING...";
@@ -160,6 +174,7 @@ function toggleCam(id, el) {
         camTimeouts[id] = setTimeout(() => {
             if (img.dataset.state !== "active") {
                 console.log(`Camera ${id} timeout`);
+                setCameraButtons(id, false);
 
                 img.src = "";
                 img.classList.remove("active");
@@ -174,6 +189,7 @@ function toggleCam(id, el) {
 
         img.onload = () => {
             img.dataset.state = "active";
+            setCameraButtons(id, true);
             sendLogToBackend(`[CAM] Camera ${id} ONLINE`);
 
             clearTimeout(camTimeouts[id]);
@@ -185,6 +201,7 @@ function toggleCam(id, el) {
         img.onerror = () => {
             if (img.dataset.errorHandled === "true") return;
 
+            setCameraButtons(id, false);
             img.dataset.errorHandled = "true";
             img.dataset.state = "error";
 
@@ -205,6 +222,7 @@ function toggleCam(id, el) {
 
     else {
         img.dataset.state = "idle";
+        setCameraButtons(id, false);
 
         img.src = "";
         img.classList.remove("active");
