@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>SEADIVER TEAM</title>
+    <title id="titleTag">Loading...</title>
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet"
             href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
@@ -15,17 +15,17 @@
 <!-- HEADER -->
 <header class="header">
     <div class="header-left">
-        <div class="univ">UNIVERSITAS NEGERI SURABAYA</div>
+        <div class="univ" id="univ">UNIVERSITY</div>
         <div id="datetime">--</div>
     </div>
 
     <div class="header-center">
-        <div class="title">◈   ROV GROUND CONTROL STATION   ◈</div>
-        <div class="subtitle">REMOTELY OPERATED VEHICLE  ·  MONITORING & CONTROL</div>
+        <div class="title" id="title">◈   TITLE   ◈</div>
+        <div class="subtitle" id="subtitle">--</div>
     </div>
 
     <div class="header-right">
-        <div class="team">SEADIVER TEAM</div>
+        <div class="team" id="team">TEAM</div>
         <div id="mode">● MODE: MANUAL</div>
         <div id="status">◌ SERIAL: OFFLINE</div>
     </div>
@@ -59,6 +59,10 @@
 
                     <div class="camera-box">
                         <img id="cam1" alt="">
+                        <div class="camera-placeholder">
+                            <i class="fa-solid fa-camera"></i>
+                            <span>CAMERA OFFLINE</span>
+                        </div>
                     </div>
                 </div>
 
@@ -79,6 +83,10 @@
 
                     <div class="camera-box">
                         <img id="cam2" alt="">
+                        <div class="camera-placeholder">
+                            <i class="fa-solid fa-camera"></i>
+                            <span>CAMERA OFFLINE</span>
+                        </div>
                     </div>
                 </div>
 

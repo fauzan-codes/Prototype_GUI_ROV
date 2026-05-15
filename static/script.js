@@ -1,13 +1,32 @@
+const camTimeouts = {};
 
 document.addEventListener("DOMContentLoaded", () => {
     console.log("JS LOADED");
 
+    loadConfig();
     initClock();
-    initDepth();
     initCanvas();
     initROVImage();
+    initWebSocket();
 });
 
+
+// CONFIG
+function loadConfig() {
+    fetch("/config")
+        .then(res => res.json())
+        .then(cfg => {
+
+            document.title = cfg.title_tag;
+
+            document.getElementById("univ").innerText = cfg.university;
+            document.getElementById("title").innerText = "◈   " + cfg.title + "   ◈";
+            document.getElementById("subtitle").innerText = cfg.subtitle;
+            document.getElementById("team").innerText = cfg.team;
+
+        })
+        .catch(err => console.error("Config error:", err));
+}
 
 
 // CLOCK
@@ -17,19 +36,6 @@ function initClock() {
         const el = document.getElementById("datetime");
         if (el) {
             el.innerText = now.toLocaleString();
-        }
-    }, 1000);
-}
-
-
-
-// DEPTH SIMULATION
-function initDepth() {
-    setInterval(() => {
-        const el = document.getElementById("depth-fill");
-        if (el) {
-            let val = Math.random() * 100;
-            el.style.height = val + "%";
         }
     }, 1000);
 }
@@ -96,15 +102,93 @@ function initCanvas() {
 // CAMERA CONTROL
 function toggleCam(id, el) {
     const img = document.getElementById("cam" + id);
+    const box = img.closest(".camera-box");
+    const placeholder = box.querySelector(".camera-placeholder span");
 
-    if (!img) return;
+    if (!img || !box) return;
 
+    const camIndex = id - 1;
+
+    // ================= CLEAR TIMEOUT (ANTI BUG) =================
+    if (camTimeouts[id]) {
+        clearTimeout(camTimeouts[id]);
+        camTimeouts[id] = null;
+    }
+
+    // ================= RESET HANDLER =================
+    img.onload = null;
+    img.onerror = null;
+    img.dataset.errorHandled = "false";
+
+    // ================= ANTI SPAM =================
+    el.disabled = true;
+    setTimeout(() => el.disabled = false, 500);
+
+    // ================= ON =================
     if (el.checked) {
-        img.src = "/video";
+        img.dataset.state = "loading";
+
+        placeholder.innerText = "CONNECTING...";
+        box.classList.remove("active");
+
+        img.src = `/camera/${camIndex}`;
         img.classList.add("active");
-    } else {
+
+        // ================= TIMEOUT =================
+        camTimeouts[id] = setTimeout(() => {
+            if (img.dataset.state !== "active") {
+                console.log(`Camera ${id} timeout`);
+
+                img.src = "";
+                img.classList.remove("active");
+
+                placeholder.innerText = "CAMERA NOT FOUND";
+                box.classList.remove("active");
+
+                el.checked = false;
+                img.dataset.state = "error";
+            }
+        }, 10000);
+
+        // ================= SUCCESS =================
+        img.onload = () => {
+            img.dataset.state = "active";
+
+            clearTimeout(camTimeouts[id]);
+            camTimeouts[id] = null;
+
+            box.classList.add("active");
+        };
+
+        // ================= ERROR =================
+        img.onerror = () => {
+            if (img.dataset.errorHandled === "true") return;
+
+            img.dataset.errorHandled = "true";
+            img.dataset.state = "error";
+
+            clearTimeout(camTimeouts[id]);
+            camTimeouts[id] = null;
+
+            img.src = "";
+            img.classList.remove("active");
+            el.checked = false;
+
+            placeholder.innerText = "CAMERA NOT FOUND";
+            box.classList.remove("active");
+        };
+
+    }
+
+    // ================= OFF =================
+    else {
+        img.dataset.state = "idle";
+
         img.src = "";
         img.classList.remove("active");
+
+        placeholder.innerText = "CAMERA OFFLINE";
+        box.classList.remove("active");
     }
 }
 
@@ -122,7 +206,35 @@ function captureCam(id) {
     link.click();
 }
 
+function initWebSocket() {
+    const ws = new WebSocket("ws://localhost:8000/ws");
 
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        // TELEMETRY
+        document.getElementById("t_setpoint").innerText = "SETPOINT: " + data.setpoint;
+        document.getElementById("t_height").innerText = "HEIGHT: " + data.depth;
+        document.getElementById("t_heading").innerText = "HEADING: " + data.heading;
+        document.getElementById("t_pressure").innerText = "PRESSURE: " + data.pressure;
+
+        // PWM
+        data.pwm.forEach((val, i) => {
+            document.getElementById(`t_pwm${i+1}`).innerText = `PWM${i+1}: ${val}`;
+        });
+
+        // DEPTH BAR
+        const depthFill = document.getElementById("depth-fill");
+        depthFill.style.height = (data.depth / 300 * 100) + "%";
+
+        // STATUS
+        document.getElementById("status").innerText = "● SERIAL: ONLINE";
+    };
+
+    ws.onclose = () => {
+        document.getElementById("status").innerText = "◌ SERIAL: OFFLINE";
+    };
+}
 
 // ROV IMAGE HANDLER
 function initROVImage() {

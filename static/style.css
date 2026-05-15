@@ -347,12 +347,41 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    display: none; 
+    /* object-fit: contain; */
+    display: none;
 }
 
 .camera-box img.active {
     display: block;
 }
+
+.camera-placeholder {
+    position: absolute;
+    inset: 0;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+
+    text-align: center;
+    color: #8a92a1;
+    background: rgba(2, 6, 23, 0.7);
+
+    transition: 0.3s ease;
+}
+
+.camera-placeholder i {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.camera-box.active .camera-placeholder {
+    opacity: 0;
+    pointer-events: none;
+}
+
+
 
 
 
@@ -573,7 +602,6 @@ body {
 
 
 /* PID */
-/* ===== PID PANEL ===== */
 
 .pid-card {
     display: flex;
