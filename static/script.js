@@ -38,11 +38,7 @@ function initDepth() {
 // TRAJECTORY CANVAS
 function initCanvas() {
     const canvas = document.getElementById("trajCanvas");
-
-    if (!canvas) {
-        console.warn("Canvas tidak ditemukan");
-        return;
-    }
+    if (!canvas) return;
 
     const parent = canvas.parentElement;
     const ctx = canvas.getContext("2d");
@@ -50,8 +46,12 @@ function initCanvas() {
     let x = 0;
     let y = 0;
 
+    let resizeTimeout;
+
     function resizeCanvas() {
         const rect = parent.getBoundingClientRect();
+
+        if (!rect.width || !rect.height) return;
 
         canvas.width = rect.width;
         canvas.height = rect.height;
@@ -60,9 +60,18 @@ function initCanvas() {
         y = canvas.height / 2;
     }
 
-    resizeCanvas();
+    function handleResize() {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(resizeCanvas, 100);
+    }
 
-    window.addEventListener("resize", resizeCanvas);
+    window.addEventListener("load", resizeCanvas);
+    window.addEventListener("resize", handleResize);
+
+    const observer = new ResizeObserver(resizeCanvas);
+    observer.observe(parent);
+
+    resizeCanvas();
 
     function draw() {
         ctx.fillStyle = "#04080f";
