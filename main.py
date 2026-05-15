@@ -39,6 +39,7 @@ TRAJECTORY_Y = 5000 #cm
 
 
 app = FastAPI()
+shutdown_event = threading.Event()
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -106,30 +107,35 @@ def generate_frames(cam_id: int):
 
     error_logged = False
 
-    while True:
-        frame = cam.read()
+    try:
+        while not shutdown_event.is_set():
+            frame = cam.read()
 
-        if frame is None:
-            if not error_logged:
-                print(f"[ERROR] Camera {cam_id} not available")
-                error_logged = True
+            if frame is None:
+                if not error_logged:
+                    print(f"[ERROR] Camera {cam_id} not available")
+                    error_logged = True
 
-            break
+                break
 
-        error_logged = False
+            error_logged = False
 
-        _, buffer = cv2.imencode(
-            '.jpg', frame,
-            [int(cv2.IMWRITE_JPEG_QUALITY), 70]
-        )
+            _, buffer = cv2.imencode(
+                '.jpg',
+                frame,
+                [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+            )
 
-        yield (
-            b'--frame\r\n'
-            b'Content-Type: image/jpeg\r\n\r\n' +
-            buffer.tobytes() +
-            b'\r\n'
-        )
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' +
+                buffer.tobytes() +
+                b'\r\n'
+            )
 
+    finally:
+        print(f"[INFO] Releasing camera {cam_id}")
+        cam.release()
 
 @app.get("/camera/{cam_id}")
 def video(cam_id: int):
@@ -193,3 +199,17 @@ async def websocket_endpoint(ws: WebSocket):
         await asyncio.sleep(0.1)
 
 
+
+# ============================== SHUTDOWN ==============================
+@app.on_event("shutdown")
+def shutdown_server():
+
+    print("[INFO] Shutdown initiated")
+
+    shutdown_event.set()
+
+    for cam_id, cam in cams.items():
+        print(f"[INFO] Force release camera {cam_id}")
+        cam.release()
+
+    print("[INFO] All cameras released")
