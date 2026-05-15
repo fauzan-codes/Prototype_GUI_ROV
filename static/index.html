@@ -159,10 +159,53 @@
         </div>
 
         <!-- BOTTOM: OPERATIONS -->
-        <div class="card">
+        <div class="card operations-card">
             <h3>OPERATIONS</h3>
-            <button class="btn start">START</button>
-            <button class="btn stop">STOP</button>
+
+            <!-- PORT -->
+            <div class="op-group">
+                <label class="op-label">PORT</label>
+
+                <select class="port-select">
+                    <option>COM3</option>
+                    <option>COM4</option>
+                    <option>COM5</option>
+                </select>
+            </div>
+
+            <!-- CONNECT -->
+            <div class="op-buttons">
+                <button class="btn connect-btn op-btn">
+                    CONNECT
+                </button>
+
+                <button class="btn stop-btn op-btn">
+                    STOP
+                </button>
+            </div>
+
+            <!-- MODE -->
+            <div class="mode-grid">
+
+                <button class="mode-btn active">
+                    AUTO
+                </button>
+
+                <button class="mode-btn">
+                    KEYBOARD
+                </button>
+
+                <button class="mode-btn">
+                    JOYSTICK
+                </button>
+
+            </div>
+
+            <!-- STATUS -->
+            <div class="joystick-status" id="joystickStatus">
+                ● JOYSTICK DISCONNECTED
+            </div>
+
         </div>
 
     </div>

@@ -1,5 +1,10 @@
 const camTimeouts = {};
+
 let ws = null;
+
+let joystick = null;
+let currentMode = "AUTO";
+let modeCooldown = false;
 
 document.addEventListener("DOMContentLoaded", () => {
     console.log("JS LOADED");
@@ -7,8 +12,10 @@ document.addEventListener("DOMContentLoaded", () => {
     loadConfig();
     initClock();
     initCanvas();
-    initROVImage();
     initWebSocket();
+    initROVImage();
+    initModeSystem();
+    initJoystick();
 });
 
 
@@ -286,6 +293,105 @@ function initROVImage() {
 
     rovImg.onload = showImage;
     rovImg.onerror = showPlaceholder;
+}
+
+
+
+// OPERATIONS
+function initModeSystem() {
+    const modeButtons = document.querySelectorAll(".mode-btn");
+    const modeText = document.getElementById("mode");
+
+    modeButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+
+            if (modeCooldown) return;
+            const selectedMode = btn.innerText.trim();
+            if (selectedMode === currentMode) return;
+
+            modeCooldown = true;
+            modeButtons.forEach(b => {
+                b.disabled = true;
+            });
+
+            modeButtons.forEach(b => {
+                b.classList.remove("active");
+            });
+
+            btn.classList.add("active");
+            currentMode = selectedMode;
+            modeText.innerText = `● MODE: ${currentMode}`;
+            sendLogToBackend(`[MODE] ${currentMode}`);
+
+            setTimeout(() => {
+                modeCooldown = false;
+                modeButtons.forEach(b => {
+                    b.disabled = false;
+                });
+            }, 1000);
+
+        });
+
+    });
+
+}
+
+// JOYSTICK
+function initJoystick() {
+
+    const statusEl = document.getElementById("joystickStatus");
+    window.addEventListener("gamepadconnected", (e) => {
+        joystick = e.gamepad;
+        console.log("Joystick connected:", joystick);
+
+        statusEl.innerText =
+            `● JOYSTICK CONNECTED : ${joystick.id}`;
+
+        statusEl.classList.add("active");
+        addLog(`[JOY] Connected : ${joystick.id}`);
+
+        pollJoystick();
+    });
+
+    window.addEventListener("gamepaddisconnected", () => {
+
+        joystick = null;
+
+        statusEl.innerText =
+            "● JOYSTICK DISCONNECTED";
+
+        statusEl.classList.remove("active");
+        addLog("[JOY] Disconnected");
+    });
+}
+
+function pollJoystick() {
+    function update() {
+
+        if (!joystick) return;
+
+        const gamepads = navigator.getGamepads();
+        const gp = gamepads[joystick.index];
+
+        if (!gp) {
+            requestAnimationFrame(update);
+            return;
+        }
+
+        // ANALOG
+        const lx = gp.axes[0].toFixed(2);
+        const ly = gp.axes[1].toFixed(2);
+
+        const rx = gp.axes[2].toFixed(2);
+        const ry = gp.axes[3].toFixed(2);
+
+        const btnA = gp.buttons[0].pressed;
+        const btnB = gp.buttons[1].pressed;
+
+        requestAnimationFrame(update);
+    }
+
+    update();
 }
 
 
