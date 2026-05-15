@@ -1,4 +1,5 @@
 const camTimeouts = {};
+let ws = null;
 
 document.addEventListener("DOMContentLoaded", () => {
     console.log("JS LOADED");
@@ -108,23 +109,18 @@ function toggleCam(id, el) {
     if (!img || !box) return;
 
     const camIndex = id - 1;
-
-    // ================= CLEAR TIMEOUT (ANTI BUG) =================
     if (camTimeouts[id]) {
         clearTimeout(camTimeouts[id]);
         camTimeouts[id] = null;
     }
 
-    // ================= RESET HANDLER =================
     img.onload = null;
     img.onerror = null;
     img.dataset.errorHandled = "false";
 
-    // ================= ANTI SPAM =================
     el.disabled = true;
     setTimeout(() => el.disabled = false, 500);
 
-    // ================= ON =================
     if (el.checked) {
         img.dataset.state = "loading";
 
@@ -134,7 +130,6 @@ function toggleCam(id, el) {
         img.src = `/camera/${camIndex}`;
         img.classList.add("active");
 
-        // ================= TIMEOUT =================
         camTimeouts[id] = setTimeout(() => {
             if (img.dataset.state !== "active") {
                 console.log(`Camera ${id} timeout`);
@@ -150,9 +145,9 @@ function toggleCam(id, el) {
             }
         }, 10000);
 
-        // ================= SUCCESS =================
         img.onload = () => {
             img.dataset.state = "active";
+            sendLogToBackend(`[CAM] Camera ${id} ONLINE`);
 
             clearTimeout(camTimeouts[id]);
             camTimeouts[id] = null;
@@ -160,12 +155,13 @@ function toggleCam(id, el) {
             box.classList.add("active");
         };
 
-        // ================= ERROR =================
         img.onerror = () => {
             if (img.dataset.errorHandled === "true") return;
 
             img.dataset.errorHandled = "true";
             img.dataset.state = "error";
+
+            sendLogToBackend(`[CAM] Camera ${id} FAILED`);
 
             clearTimeout(camTimeouts[id]);
             camTimeouts[id] = null;
@@ -180,7 +176,6 @@ function toggleCam(id, el) {
 
     }
 
-    // ================= OFF =================
     else {
         img.dataset.state = "idle";
 
@@ -189,6 +184,7 @@ function toggleCam(id, el) {
 
         placeholder.innerText = "CAMERA OFFLINE";
         box.classList.remove("active");
+        sendLogToBackend(`[CAM] Camera ${id} OFFLINE`);
     }
 }
 
@@ -206,11 +202,15 @@ function captureCam(id) {
     link.click();
 }
 
+
+
+// WEBSOCKET
 function initWebSocket() {
-    const ws = new WebSocket("ws://localhost:8000/ws");
+    ws = new WebSocket("ws://localhost:8000/ws");
 
     ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
+        const msg = JSON.parse(event.data);
+        const data = msg.telemetry;
 
         // TELEMETRY
         document.getElementById("t_setpoint").innerText = "SETPOINT: " + data.setpoint;
@@ -224,16 +224,31 @@ function initWebSocket() {
         });
 
         // DEPTH BAR
-        const depthFill = document.getElementById("depth-fill");
-        depthFill.style.height = (data.depth / 300 * 100) + "%";
+        document.getElementById("depth-fill").style.height =
+            (data.depth / 300 * 100) + "%";
 
         // STATUS
         document.getElementById("status").innerText = "● SERIAL: ONLINE";
+
+        if (msg.log) {
+            addLog(msg.log);
+        }
     };
 
     ws.onclose = () => {
         document.getElementById("status").innerText = "◌ SERIAL: OFFLINE";
     };
+}
+
+function sendLogToBackend(text) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: "log",
+            message: text
+        }));
+    } else {
+        console.log("WS belum connect");
+    }
 }
 
 // ROV IMAGE HANDLER
@@ -280,11 +295,8 @@ function sendPID() {
     const ki = parseFloat(document.getElementById("ki").value).toFixed(4);
     const kd = parseFloat(document.getElementById("kd").value).toFixed(4);
 
-    document.getElementById("kp-last").innerText = "Last: " + kp;
-    document.getElementById("ki-last").innerText = "Last: " + ki;
-    document.getElementById("kd-last").innerText = "Last: " + kd;
-
-    addLog(`[PID] Kp=${kp} Ki=${ki} Kd=${kd}`);
+    const text = `[PID] Kp=${kp} Ki=${ki} Kd=${kd}`;
+    sendLogToBackend(text)
 }
 
 function syncPID(slider, id) {
@@ -315,5 +327,5 @@ function copyLog() {
 }
 
 function fakeLog() {
-    addLog("IMU OK | DEPTH 1.23m | PWM UPDATED");
+    sendLogToBackend("[INFO] IMU OK | DEPTH 1.23m | PWM UPDATED");
 }

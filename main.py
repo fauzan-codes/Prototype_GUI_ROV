@@ -1,11 +1,15 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, FileResponse
+from collections import deque
 import asyncio
 import random
-import cv2
 import threading
+import json
+import cv2
 
+
+log_buffer = deque(maxlen=100)
 
 
 # ============================== CAMERAS ==============================
@@ -17,8 +21,6 @@ cameras = {
 for cam in cameras.values():
     cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
-
 
 
 # ============================== CONFIG ==============================
@@ -141,11 +143,38 @@ def video(cam_id: int):
 
 
 # ============================== WEBSOCKET ==============================
+def add_log(message):
+    print(message)
+    log_buffer.append(message)
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
 
     while True:
+        msg = None
+
+        # ===== TERIMA DATA =====
+        try:
+            recv = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
+            msg = json.loads(recv)
+        except:
+            pass
+
+        # ===== HANDLE MESSAGE =====
+        if msg:
+            if msg.get("type") == "pid":
+                kp = msg.get("kp")
+                ki = msg.get("ki")
+                kd = msg.get("kd")
+
+                add_log(f"[PID] Kp={kp} Ki={ki} Kd={kd}")
+
+            elif msg.get("type") == "log":
+                add_log(msg.get("message"))  # langsung pakai
+
+        # ===== TELEMETRY =====
         data = {
             "setpoint": random.randint(0, 300),
             "depth": random.randint(0, 300),
@@ -154,5 +183,17 @@ async def websocket_endpoint(ws: WebSocket):
             "pwm": [random.randint(1000, 2000) for _ in range(6)]
         }
 
-        await ws.send_json(data)
+        # ===== AMBIL LOG =====
+        log = None
+        if log_buffer:
+            log = log_buffer.popleft()
+
+        # ===== KIRIM =====
+        await ws.send_json({
+            "telemetry": data,
+            "log": log
+        })
+
         await asyncio.sleep(0.1)
+
+
