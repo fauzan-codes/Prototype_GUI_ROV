@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, FileResponse
 from starlette.websockets import WebSocketDisconnect
@@ -30,12 +30,22 @@ qr_result = {
     "source": None 
 }
 
+active_streams = {
+    0: 0,
+    1: 0
+}
+
 latest_frames = {
     0: None,
     1: None
 }
-frame_lock = threading.Lock()
 
+active_connections = {
+    0: set(),
+    1: set()
+}
+
+frame_lock = threading.Lock()
 log_buffer = deque(maxlen=100)
 
 
@@ -218,62 +228,44 @@ def qr_worker():
 
 def generate_frames(cam_id: int):
     cam = cams.get(cam_id)
-
     if cam is None:
         return
 
+    active_streams[cam_id] += 1
+    print(f"[CAM] Camera {cam_id} ONLINE ({active_streams[cam_id]} clients)")
+
     cam.open()
-    error_logged = False
 
     try:
         while not shutdown_event.is_set():
-            start = time.time()
             frame = cam.read()
-
-            with frame_lock:
-                latest_frames[cam_id] = frame
-
             if frame is None:
-                if not error_logged:
-                    print(f"[ERROR] Camera {cam_id} not available")
-                    error_logged = True
-                break
-            error_logged = False
+                time.sleep(0.2)
+                continue
 
-            if frame is None:
-                if not error_logged:
-                    print(f"[ERROR] Camera {cam_id} not available")
-                    error_logged = True
+            _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
 
-                break
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' +
+                buffer.tobytes() +
+                b'\r\n'
+            )
 
-            error_logged = False
-            try:
-                _, buffer = cv2.imencode(
-                    '.jpg',
-                    frame,
-                    [int(cv2.IMWRITE_JPEG_QUALITY), 70]
-                )
+            time.sleep(0.05)
 
-                yield (
-                    b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n' +
-                    buffer.tobytes() +
-                    b'\r\n'
-                )
+    except GeneratorExit:
+        print(f"[INFO] Generator closed cam {cam_id}")
 
-                elapsed = time.time() - start
-                delay = max(0, 0.05 - elapsed)
-                time.sleep(delay)
-
-            except Exception:
-                print(f"[INFO] Client disconnected cam {cam_id}")
-                break
-
-    
     finally:
-        print(f"[INFO] Releasing camera {cam_id}")
-        cam.release()
+        active_streams[cam_id] -= 1
+        active_streams[cam_id] = max(0, active_streams[cam_id])
+
+        print(f"[CAM] Camera {cam_id} OFFLINE ({active_streams[cam_id]} clients)")
+
+        if active_streams[cam_id] == 0:
+            print(f"[INFO] Releasing camera {cam_id}")
+            cam.release()
 
 
 def safe_text(text, max_len=25):

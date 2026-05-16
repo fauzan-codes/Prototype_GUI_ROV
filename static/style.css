@@ -636,7 +636,7 @@ body {
     font-weight: 600;
     color: #22c55e;
     letter-spacing: 2px;
-    min-width: 7rem;
+    min-width: 8rem;
     width: 60%;
     margin: 0 20% 0.5rem 20%;
 
@@ -899,7 +899,7 @@ body {
 }
 
 .design-box {
-    width: 90%;
+    width: 100%;
     aspect-ratio: 1 / 1;
 
     background: #020617;

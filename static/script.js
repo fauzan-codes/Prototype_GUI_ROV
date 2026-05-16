@@ -1,6 +1,8 @@
 let serverTime = 0;
 
 const camTimeouts = {};
+const camStates = {};
+const activeStreams = {};
 let activeFullscreenCam = null;
 
 let lastQR = null;
@@ -143,6 +145,17 @@ function toggleCam(id, el) {
     if (!img || !box) return;
 
     const camIndex = id - 1;
+
+    if (!camStates[id]) {
+        camStates[id] = "idle";
+    }
+
+    if (camStates[id] === "loading") {
+        console.log(`Camera ${id} still loading`);
+        el.checked = true;
+        return;
+    }
+
     if (camTimeouts[id]) {
         clearTimeout(camTimeouts[id]);
         camTimeouts[id] = null;
@@ -156,33 +169,49 @@ function toggleCam(id, el) {
     setTimeout(() => el.disabled = false, 500);
 
     if (el.checked) {
+        if (camStates[id] === "active") {
+            console.log(`Camera ${id} already active`);
+            return;
+        }
+
+        camStates[id] = "loading";
+
         setCameraButtons(id, false);
         img.dataset.state = "loading";
 
         placeholder.innerText = "CONNECTING...";
         box.classList.remove("active");
 
+        if (activeStreams[id]) {
+            activeStreams[id].src = "";
+            activeStreams[id] = null;
+        }
+
+        img.src = "";
+        void img.offsetWidth;
         img.src = `/camera/${camIndex}`;
+        activeStreams[id] = img;
+
         img.classList.add("active");
 
         camTimeouts[id] = setTimeout(() => {
-            if (img.dataset.state !== "active") {
+            if (camStates[id] !== "active") {
                 console.log(`Camera ${id} timeout`);
+                camStates[id] = "error";
                 setCameraButtons(id, false);
 
                 img.src = "";
                 img.classList.remove("active");
-
                 placeholder.innerText = "CAMERA NOT FOUND";
                 box.classList.remove("active");
 
                 el.checked = false;
-                img.dataset.state = "error";
             }
         }, 10000);
 
         img.onload = () => {
-            img.dataset.state = "active";
+            camStates[id] = "active";
+
             setCameraButtons(id, true);
             sendLogToBackend(`[CAM] Camera ${id} ONLINE`);
 
@@ -195,10 +224,10 @@ function toggleCam(id, el) {
         img.onerror = () => {
             if (img.dataset.errorHandled === "true") return;
 
-            setCameraButtons(id, false);
             img.dataset.errorHandled = "true";
-            img.dataset.state = "error";
+            camStates[id] = "error";
 
+            setCameraButtons(id, false);
             sendLogToBackend(`[CAM] Camera ${id} FAILED`);
 
             clearTimeout(camTimeouts[id]);
@@ -215,7 +244,8 @@ function toggleCam(id, el) {
     }
 
     else {
-        img.dataset.state = "idle";
+
+        camStates[id] = "idle";
         setCameraButtons(id, false);
 
         img.src = "";
@@ -223,9 +253,11 @@ function toggleCam(id, el) {
 
         placeholder.innerText = "CAMERA OFFLINE";
         box.classList.remove("active");
+
         sendLogToBackend(`[CAM] Camera ${id} OFFLINE`);
     }
 }
+
 
 async function captureCam(id) {
     const btn = document.querySelectorAll(".capture")[id - 1];
