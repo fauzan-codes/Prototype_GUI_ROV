@@ -1,5 +1,10 @@
+let serverTime = 0;
+
 const camTimeouts = {};
 let activeFullscreenCam = null;
+
+let lastQR = null;
+let lastQRTime = 0;
 
 let ws = null;
 
@@ -279,6 +284,65 @@ function closeFullscreenCam() {
 }
 
 
+function updateQRSystem(qrData) {
+    if (!qrData) return;
+
+    const now = serverTime;
+    const text = `${qrData.side} | ${qrData.raw}`;
+    const MAX_HISTORY = 20;
+    
+    const nowDate = new Date(serverTime);
+    const hh = String(nowDate.getHours()).padStart(2, '0');
+    const mm = String(nowDate.getMinutes()).padStart(2, '0');
+    const ss = String(nowDate.getSeconds()).padStart(2, '0');
+    const time2 = `${mm}:${ss}`;
+    const timeStr = `${hh}:${mm}:${ss}`;
+
+    const historyBox = document.getElementById("qrHistoryBox");
+    const item = document.createElement("div");
+    item.classList.add("qr-item");
+
+    if (text === lastQR) {
+        item.classList.add("same");
+    } else {
+        item.classList.add("new");
+    }
+
+    item.innerHTML = `
+        <span class="qr-time">${time2}</span>
+        <span class="qr-sep">-</span>
+        <span class="qr-text">${qrData.side}</span>
+    `;
+
+    historyBox.prepend(item);
+    historyBox.scrollLeft = 0;
+    historyBox.scrollTop = historyBox.scrollHeight;
+    
+    while (historyBox.children.length > MAX_HISTORY) {
+        historyBox.removeChild(historyBox.lastChild);
+    }
+
+    // ===== MAIN LOGIC =====
+    const isFirst = !lastQR;
+    const isDifferent = text !== lastQR;
+    const isTimeout = (now - lastQRTime) > 120000;
+
+    if (isFirst || isDifferent || isTimeout) {
+
+        document.getElementById("qrMainSide").innerText = "SISI - " + qrData.side;
+        document.getElementById("qrMainRaw").innerText = qrData.raw;
+        document.getElementById("qrMainTime").innerText =
+            "Updated: " + timeStr;
+
+        lastQR = text;
+        lastQRTime = now;
+    }
+}
+
+function clearQRHistory() {
+    document.getElementById("qrHistoryBox").innerHTML = "";
+}
+
 
 
 
@@ -290,8 +354,18 @@ function initWebSocket() {
         const msg = JSON.parse(event.data);
         const data = msg.telemetry;
 
+        // ambilwaktu
+        if (msg.timestamp) {
+            serverTime = msg.timestamp * 1000; // convert ke ms
+        }
+
         // DATETIME
         document.getElementById("datetime").innerText = msg.datetime;
+
+        // QRSYSTEM
+        if (msg.qr) {
+            updateQRSystem(msg.qr);
+        }
 
         // TELEMETRY
         document.getElementById("t_setpoint").innerText = "SETPOINT: " + data.setpoint;

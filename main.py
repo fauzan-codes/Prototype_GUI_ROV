@@ -1,16 +1,32 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, FileResponse
+from pyzbar.pyzbar import decode as qr_decode
 from collections import deque
 from datetime import datetime
 from pathlib import Path
 import asyncio
 import random
 import threading
+import time
 import json
 import cv2
 import os
 
+
+qr_result = {
+    "data": None,
+    "last_scan_time": 0,
+    "last_log_time": 0, 
+    "last_raw": None,
+    "last_side": None,
+    "updated": False,
+
+    "last_invalid_time": 0,
+    "last_invalid_raw": None,
+
+    "source": None 
+}
 
 log_buffer = deque(maxlen=100)
 
@@ -117,7 +133,6 @@ def generate_frames(cam_id: int):
         return
 
     cam.open()
-
     error_logged = False
 
     try:
@@ -128,11 +143,83 @@ def generate_frames(cam_id: int):
                 if not error_logged:
                     print(f"[ERROR] Camera {cam_id} not available")
                     error_logged = True
+                break
+            error_logged = False
+
+            # QR SYSTEM
+            try:
+                now = time.time()
+
+                if now - qr_result["last_scan_time"] >= 1:
+                    qr_result["last_scan_time"] = now
+
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    codes = qr_decode(gray)
+
+                    for code in codes:
+                        raw = code.data.decode('utf-8', errors='ignore').strip()
+
+                        if not raw:
+                            continue
+
+                        side = extract_side(raw)
+
+                        if side is None:
+                            last_invalid_raw = qr_result.get("last_invalid_raw")
+                            last_invalid_time = qr_result.get("last_invalid_time", 0)
+
+                            if raw != last_invalid_raw or (now - last_invalid_time > 120):
+                                add_log(f"[QR][CAM {cam_id}] INVALID | {raw}")
+                                qr_result["last_invalid_raw"] = raw
+                                qr_result["last_invalid_time"] = now
+                            continue
+
+                        current_source = qr_result.get("source")
+                        allow_update = False
+
+                        if cam_id == 0:
+                            allow_update = True
+
+                        elif cam_id == 1:
+                            if current_source != 0:
+                                allow_update = True
+
+                        if not allow_update:
+                            continue
+
+                        qr_result["data"] = {
+                            "side": side,
+                            "raw": raw,
+                            "cam": cam_id
+                        }
+
+                        qr_result["updated"] = True
+                        qr_result["source"] = cam_id
+
+                        last_side = qr_result.get("last_side")
+                        last_log_time = qr_result["last_log_time"]
+
+                        if last_side != side:
+                            add_log(f"[QR][CAM {cam_id}] DETECTED {side} | {raw}")
+                            qr_result["last_side"] = side
+                            qr_result["last_raw"] = raw
+                            qr_result["last_log_time"] = now
+
+                        elif now - last_log_time > 120:
+                            add_log(f"[QR][CAM {cam_id}] DETECTED {side} | {raw}")
+                            qr_result["last_log_time"] = now
+
+            except Exception as e:
+                print("[QR ERROR]", e)
+
+            if frame is None:
+                if not error_logged:
+                    print(f"[ERROR] Camera {cam_id} not available")
+                    error_logged = True
 
                 break
 
             error_logged = False
-
             _, buffer = cv2.imencode(
                 '.jpg',
                 frame,
@@ -149,6 +236,53 @@ def generate_frames(cam_id: int):
     finally:
         print(f"[INFO] Releasing camera {cam_id}")
         cam.release()
+
+
+import re
+
+def extract_side(raw):
+    u = raw.upper().strip()
+
+    valid_map = {
+        "A": "A",
+        "B": "B",
+        "C": "C",
+        "D": "D",
+        "SIDE A": "A",
+        "SIDE B": "B",
+        "SIDE C": "C",
+        "SIDE D": "D",
+        "SIDE-A": "A",
+        "SIDE-B": "B",
+        "SIDE-C": "C",
+        "SIDE-D": "D",
+        "SIDE_A": "A",
+        "SIDE_B": "B",
+        "SIDE_C": "C",
+        "SIDE_D": "D",
+        "SISI A": "A",
+        "SISI B": "B",
+        "SISI C": "C",
+        "SISI D": "D",
+        "SISI-A": "A",
+        "SISI-B": "B",
+        "SISI-C": "C",
+        "SISI-D": "D",
+        "SISI_A": "A",
+        "SISI_B": "B",
+        "SISI_C": "C",
+        "SISI_D": "D",
+    }
+
+    if u in valid_map:
+        return valid_map[u]
+
+    match = re.search(r'\b(A|B|C|D)\b', u)
+    if match:
+        return match.group(1)
+
+    return None
+
 
 @app.get("/camera/{cam_id}")
 def video(cam_id: int):
@@ -249,15 +383,24 @@ async def websocket_endpoint(ws: WebSocket):
             log = log_buffer.popleft()
         
         now = datetime.now()
+        timestamp = time.time() 
+
         formatted_time = now.strftime("%A, %d %b %Y - %H:%M:%S")
+
+        qr_payload = None
+        if qr_result["updated"]:
+            qr_payload = qr_result["data"]
+            qr_result["updated"] = False
 
         await ws.send_json({
             "telemetry": data,
             "log": log,
-            "datetime": formatted_time
+            "datetime": formatted_time,
+            "timestamp": timestamp,
+            "qr": qr_payload
         })
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
 
 

@@ -101,8 +101,36 @@
                 </div>
 
             </div>
+        </div>
 
-            <div class="qr-box">QR SCANNING...</div>
+        <div class="card qr-card">
+            <h3>QR SCANNER</h3>
+
+            <div class="qr-box">
+
+                <!-- LEFT: RESULT -->
+                <div class="qr-result">
+                    <div id="qrMainSide" class="qr-side">-</div>
+
+                    <div class="qr-info">
+                        <div id="qrMainRaw">WAITING SCAN...</div>
+                        <div id="qrMainTime">--</div>
+                    </div>
+                </div>
+
+                <!-- RIGHT: HISTORY -->
+                <div class="qr-history">
+
+                    <div class="qr-history-header">
+                        <span>HISTORY</span>
+                        <button class="btn" onclick="clearQRHistory()">CLEAR</button>
+                    </div>
+
+                    <div id="qrHistoryBox" class="qr-history-box"></div>
+
+                </div>
+
+            </div>
         </div>
 
         <div class="card telemetry-card">
