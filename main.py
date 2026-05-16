@@ -1,6 +1,7 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, FileResponse
+from starlette.websockets import WebSocketDisconnect
 from pyzbar.pyzbar import decode as qr_decode
 from collections import deque
 from datetime import datetime
@@ -11,6 +12,7 @@ import threading
 import time
 import json
 import cv2
+import re
 import os
 
 
@@ -28,18 +30,13 @@ qr_result = {
     "source": None 
 }
 
-log_buffer = deque(maxlen=100)
-
-
-# ============================== CAMERAS ==============================
-cameras = {
-    0: cv2.VideoCapture(0),
-    1: cv2.VideoCapture(1)
+latest_frames = {
+    0: None,
+    1: None
 }
+frame_lock = threading.Lock()
 
-for cam in cameras.values():
-    cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+log_buffer = deque(maxlen=100)
 
 
 # ============================== CONFIG ==============================
@@ -103,7 +100,8 @@ class Camera:
         if not success:
             return None
 
-        frame = cv2.resize(frame, (640, 480))
+        if frame.shape[1] != 640:
+            frame = cv2.resize(frame, (640, 480))
         return frame
     
     def capture(self):
@@ -124,6 +122,98 @@ cams = {
     0: Camera(0),  # Front
     1: Camera(1)   # Bottom
 }
+qr_thread = None
+
+def qr_worker():
+    print("[QR] Worker started")
+
+    while not shutdown_event.is_set():
+        try:
+            with frame_lock:
+                frames = {
+                    cam_id: frame.copy()
+                    for cam_id, frame in latest_frames.items()
+                    if frame is not None
+                }
+
+            if not frames:
+                time.sleep(0.2)
+                continue
+
+            now = time.time()
+
+            if now - qr_result["last_scan_time"] < 2:
+                time.sleep(0.1)
+                continue
+
+            qr_result["last_scan_time"] = now
+
+            # prioritas camera 1
+            for cam_id in sorted(frames.keys()):
+                frame = frames[cam_id]
+
+                small = cv2.resize(frame, (320, 240))
+                gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+                codes = qr_decode(gray)
+
+                for code in codes:
+                    raw = code.data.decode('utf-8', errors='ignore').strip()
+                    if not raw:
+                        continue
+
+                    side = extract_side(raw)
+
+                    if side is None:
+                        last_invalid_raw = qr_result.get("last_invalid_raw")
+                        last_invalid_time = qr_result.get("last_invalid_time", 0)
+
+                        if raw != last_invalid_raw or (now - last_invalid_time > 120):
+                            add_log(f"[QR][CAM {cam_id}] INVALID | {safe_text(raw)}")
+                            qr_result["last_invalid_raw"] = raw
+                            qr_result["last_invalid_time"] = now
+                        continue
+
+                    # prioritas logic
+                    current_source = qr_result.get("source")
+
+                    allow_update = False
+
+                    if cam_id == 0:
+                        allow_update = True
+
+                    elif cam_id == 1:
+                        if current_source != 0:
+                            allow_update = True
+
+                    if not allow_update:
+                        continue
+
+                    qr_result["data"] = {
+                        "side": side,
+                        "raw": raw,
+                        "cam": cam_id
+                    }
+
+                    qr_result["updated"] = True
+                    qr_result["source"] = cam_id
+
+                    last_side = qr_result.get("last_side")
+                    last_log_time = qr_result["last_log_time"]
+
+                    if last_side != side:
+                        add_log(f"[QR][CAM {cam_id}] DETECTED {side} | {safe_text(raw)}")
+                        qr_result["last_side"] = side
+                        qr_result["last_raw"] = raw
+                        qr_result["last_log_time"] = now
+
+                    elif now - last_log_time > 120:
+                        add_log(f"[QR][CAM {cam_id}] DETECTED {side} | {safe_text(raw)}")
+                        qr_result["last_log_time"] = now
+
+        except Exception as e:
+            print("[QR WORKER ERROR]", e)
+
+        time.sleep(0.1)
 
 
 def generate_frames(cam_id: int):
@@ -137,8 +227,12 @@ def generate_frames(cam_id: int):
 
     try:
         while not shutdown_event.is_set():
+            start = time.time()
             frame = cam.read()
 
+            with frame_lock:
+                latest_frames[cam_id] = frame
+
             if frame is None:
                 if not error_logged:
                     print(f"[ERROR] Camera {cam_id} not available")
@@ -146,99 +240,44 @@ def generate_frames(cam_id: int):
                 break
             error_logged = False
 
-            # QR SYSTEM
+            if frame is None:
+                if not error_logged:
+                    print(f"[ERROR] Camera {cam_id} not available")
+                    error_logged = True
+
+                break
+
+            error_logged = False
             try:
-                now = time.time()
+                _, buffer = cv2.imencode(
+                    '.jpg',
+                    frame,
+                    [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+                )
 
-                if now - qr_result["last_scan_time"] >= 1:
-                    qr_result["last_scan_time"] = now
+                yield (
+                    b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' +
+                    buffer.tobytes() +
+                    b'\r\n'
+                )
 
-                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    codes = qr_decode(gray)
+                elapsed = time.time() - start
+                delay = max(0, 0.05 - elapsed)
+                time.sleep(delay)
 
-                    for code in codes:
-                        raw = code.data.decode('utf-8', errors='ignore').strip()
-
-                        if not raw:
-                            continue
-
-                        side = extract_side(raw)
-
-                        if side is None:
-                            last_invalid_raw = qr_result.get("last_invalid_raw")
-                            last_invalid_time = qr_result.get("last_invalid_time", 0)
-
-                            if raw != last_invalid_raw or (now - last_invalid_time > 120):
-                                add_log(f"[QR][CAM {cam_id}] INVALID | {raw}")
-                                qr_result["last_invalid_raw"] = raw
-                                qr_result["last_invalid_time"] = now
-                            continue
-
-                        current_source = qr_result.get("source")
-                        allow_update = False
-
-                        if cam_id == 0:
-                            allow_update = True
-
-                        elif cam_id == 1:
-                            if current_source != 0:
-                                allow_update = True
-
-                        if not allow_update:
-                            continue
-
-                        qr_result["data"] = {
-                            "side": side,
-                            "raw": raw,
-                            "cam": cam_id
-                        }
-
-                        qr_result["updated"] = True
-                        qr_result["source"] = cam_id
-
-                        last_side = qr_result.get("last_side")
-                        last_log_time = qr_result["last_log_time"]
-
-                        if last_side != side:
-                            add_log(f"[QR][CAM {cam_id}] DETECTED {side} | {raw}")
-                            qr_result["last_side"] = side
-                            qr_result["last_raw"] = raw
-                            qr_result["last_log_time"] = now
-
-                        elif now - last_log_time > 120:
-                            add_log(f"[QR][CAM {cam_id}] DETECTED {side} | {raw}")
-                            qr_result["last_log_time"] = now
-
-            except Exception as e:
-                print("[QR ERROR]", e)
-
-            if frame is None:
-                if not error_logged:
-                    print(f"[ERROR] Camera {cam_id} not available")
-                    error_logged = True
-
+            except Exception:
+                print(f"[INFO] Client disconnected cam {cam_id}")
                 break
 
-            error_logged = False
-            _, buffer = cv2.imencode(
-                '.jpg',
-                frame,
-                [int(cv2.IMWRITE_JPEG_QUALITY), 70]
-            )
-
-            yield (
-                b'--frame\r\n'
-                b'Content-Type: image/jpeg\r\n\r\n' +
-                buffer.tobytes() +
-                b'\r\n'
-            )
-
+    
     finally:
         print(f"[INFO] Releasing camera {cam_id}")
         cam.release()
 
 
-import re
+def safe_text(text, max_len=25):
+    return text[:max_len] + "..." if len(text) > max_len else text
 
 def extract_side(raw):
     u = raw.upper().strip()
@@ -295,6 +334,13 @@ def video(cam_id: int):
     )
 
 
+@app.on_event("startup")
+def start_qr_worker():
+    global qr_thread
+    qr_thread = threading.Thread(target=qr_worker, daemon=True)
+    qr_thread.start()
+
+
 @app.post("/capture/{cam_id}")
 def capture_camera(cam_id: int):
     cam = cams.get(cam_id)
@@ -349,59 +395,56 @@ def add_log(message):
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
 
-    while True:
-        msg = None
+    try:
+        while True:
+            msg = None
 
-        try:
-            recv = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
-            msg = json.loads(recv)
-        except:
-            pass
+            try:
+                recv = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
+                msg = json.loads(recv)
+            except asyncio.TimeoutError:
+                pass
+            except WebSocketDisconnect:
+                print("[WS] Client disconnected")
+                break
 
-        if msg:
-            if msg.get("type") == "pid":
-                kp = msg.get("kp")
-                ki = msg.get("ki")
-                kd = msg.get("kd")
+            if msg:
+                if msg.get("type") == "pid":
+                    add_log(f"[PID] Kp={msg.get('kp')} Ki={msg.get('ki')} Kd={msg.get('kd')}")
 
-                add_log(f"[PID] Kp={kp} Ki={ki} Kd={kd}")
+                elif msg.get("type") == "log":
+                    add_log(msg.get("message"))
 
-            elif msg.get("type") == "log":
-                add_log(msg.get("message"))
+            data = {
+                "setpoint": random.randint(0, 300),
+                "depth": random.randint(0, 300),
+                "heading": random.randint(0, 360),
+                "pressure": random.randint(900, 1100),
+                "pwm": [random.randint(1000, 2000) for _ in range(6)]
+            }
 
-        # ===== TELEMETRY =====
-        data = {
-            "setpoint": random.randint(0, 300),
-            "depth": random.randint(0, 300),
-            "heading": random.randint(0, 360),
-            "pressure": random.randint(900, 1100),
-            "pwm": [random.randint(1000, 2000) for _ in range(6)]
-        }
+            log = log_buffer.popleft() if log_buffer else None
 
-        log = None
-        if log_buffer:
-            log = log_buffer.popleft()
-        
-        now = datetime.now()
-        timestamp = time.time() 
+            now = datetime.now()
+            timestamp = time.time()
 
-        formatted_time = now.strftime("%A, %d %b %Y - %H:%M:%S")
+            qr_payload = None
+            if qr_result["updated"]:
+                qr_payload = qr_result["data"]
+                qr_result["updated"] = False
 
-        qr_payload = None
-        if qr_result["updated"]:
-            qr_payload = qr_result["data"]
-            qr_result["updated"] = False
+            await ws.send_json({
+                "telemetry": data,
+                "log": log,
+                "datetime": now.strftime("%A, %d %b %Y - %H:%M:%S"),
+                "timestamp": timestamp,
+                "qr": qr_payload
+            })
 
-        await ws.send_json({
-            "telemetry": data,
-            "log": log,
-            "datetime": formatted_time,
-            "timestamp": timestamp,
-            "qr": qr_payload
-        })
+            await asyncio.sleep(0.5)
 
-        await asyncio.sleep(0.5)
-
+    except WebSocketDisconnect:
+        print("[WS] Disconnected safely")
 
 
 # ============================== SHUTDOWN ==============================
