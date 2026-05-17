@@ -6,6 +6,8 @@ from pyzbar.pyzbar import decode as qr_decode
 from collections import deque
 from datetime import datetime
 from pathlib import Path
+import serial.tools.list_ports
+import serial
 import asyncio
 import random
 import threading
@@ -45,6 +47,10 @@ active_connections = {
     1: set()
 }
 
+serial_conn = None
+serial_thread = None
+serial_running = False
+serial_tx_queue = deque()
 frame_lock = threading.Lock()
 log_buffer = deque(maxlen=100)
 
@@ -61,8 +67,8 @@ DANGER_DEPTH = 200      #cm
 POOL_DEPTH = 300        #cm
 SETPOINT_DEPTH = 150    #cm
 
-TRAJECTORY_X = 5000     #cm
-TRAJECTORY_Y = 5000     #cm
+TRAJECTORY_X = 500      #cm
+TRAJECTORY_Y = 500      #cm
 
 
 app = FastAPI()
@@ -91,8 +97,93 @@ def get_config():
 
         "pool_depth": POOL_DEPTH,
         "danger_depth": DANGER_DEPTH,
-        "setpoint_depth": SETPOINT_DEPTH
+        "setpoint_depth": SETPOINT_DEPTH,
+
+        "traj_x": TRAJECTORY_X,
+        "traj_y": TRAJECTORY_Y
     }
+
+
+# ============================== CAMERA SYSTEM ==============================
+def list_serial_ports():
+    ports = serial.tools.list_ports.comports()
+    return [p.device for p in ports]
+
+def connect_serial(port, baud=115200):
+    global serial_conn, serial_thread, serial_running
+
+    try:
+        serial_conn = serial.Serial(port, baud, timeout=1)
+        serial_running = True
+
+        add_log(f"[SERIAL] CONNECTED {port}")
+
+        serial_thread = threading.Thread(target=serial_reader, daemon=True)
+        serial_thread.start()
+
+        return True
+
+    except Exception as e:
+        add_log(f"[SERIAL] FAILED {port} | {safe_text(e)}")
+        return False
+    
+def disconnect_serial():
+    global serial_conn, serial_running
+
+    serial_running = False
+
+    if serial_conn:
+        try:
+            serial_conn.close()
+            add_log("[SERIAL] DISCONNECTED")
+        except:
+            pass
+
+    serial_conn = None
+
+def serial_reader():
+    global serial_conn, serial_running
+
+    while serial_running:
+        try:
+            # ================= TX =================
+            if serial_conn and serial_tx_queue:
+                msg = serial_tx_queue.popleft()
+                serial_conn.write(msg.encode())
+                add_log(f"[SERIAL TX] {msg.strip()}")
+
+            # ================= RX =================
+            if serial_conn and serial_conn.in_waiting:
+                line = serial_conn.readline().decode(errors='ignore').strip()
+                if line:
+                    add_log(f"[SERIAL RX] {line}")
+
+        except Exception as e:
+            add_log(f"[SERIAL ERROR] {e}")
+            break
+
+        time.sleep(0.05)
+
+
+@app.get("/serial/ports")
+def get_ports():
+    return {"ports": list_serial_ports()}
+
+@app.post("/serial/connect")
+async def serial_connect(req: Request):
+    data = await req.json()
+    port = data.get("port")
+
+    if not port:
+        return {"success": False, "message": "No port selected"}
+
+    ok = connect_serial(port)
+    return {"success": ok}
+
+@app.post("/serial/disconnect")
+def serial_disconnect():
+    disconnect_serial()
+    return {"success": True}
 
 
 # ============================== CAMERA SYSTEM ==============================
@@ -139,6 +230,9 @@ cams = {
 }
 qr_thread = None
 
+
+
+# QRSCAN
 def qr_worker():
     print("[QR] Worker started")
 
@@ -190,7 +284,6 @@ def qr_worker():
 
                     # prioritas logic
                     current_source = qr_result.get("source")
-
                     allow_update = False
 
                     if cam_id == 0:
@@ -217,6 +310,7 @@ def qr_worker():
 
                     if last_side != side:
                         add_log(f"[QR][CAM {cam_id}] DETECTED {side} | {safe_text(raw)}")
+
                         qr_result["last_side"] = side
                         qr_result["last_raw"] = raw
                         qr_result["last_log_time"] = now
@@ -424,6 +518,8 @@ async def websocket_endpoint(ws: WebSocket):
             now = datetime.now()
             timestamp = time.time()
 
+            update_robot()
+
             qr_payload = None
             if qr_result["updated"]:
                 qr_payload = qr_result["data"]
@@ -434,13 +530,34 @@ async def websocket_endpoint(ws: WebSocket):
                 "log": log,
                 "datetime": now.strftime("%A, %d %b %Y - %H:%M:%S"),
                 "timestamp": timestamp,
-                "qr": qr_payload
+                "qr": qr_payload,
+
+                "trajectory": robot_pos #dummy data trajectory
             })
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3) #cd
 
     except WebSocketDisconnect:
         print("[WS] Disconnected safely")
+
+
+# ============================== DUMMY TRAJECTORY ==============================
+robot_pos = {
+    "x": TRAJECTORY_X // 2,
+    "y": TRAJECTORY_Y // 2
+}
+def update_robot():
+    step = 20
+
+    dx = random.uniform(-step, step)
+    dy = random.uniform(-step, step)
+    smoothing = 0.7
+
+    robot_pos["x"] += dx * smoothing
+    robot_pos["y"] += dy * smoothing
+
+    robot_pos["x"] = max(0, min(TRAJECTORY_X, robot_pos["x"]))
+    robot_pos["y"] = max(0, min(TRAJECTORY_Y, robot_pos["y"]))
 
 
 # ============================== SHUTDOWN ==============================

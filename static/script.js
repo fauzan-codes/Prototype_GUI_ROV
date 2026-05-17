@@ -19,6 +19,12 @@ let depthData = {
     depth: 0,
 };
 
+let TRAJ_CONFIG = {
+    x: 5000,
+    y: 5000
+};
+let trajPath = [];
+
 let joystick = null;
 let currentMode = "AUTO";
 let modeCooldown = false;
@@ -27,11 +33,12 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("JS LOADED");
 
     loadConfig();
-    initCanvas();
+    loadPorts();
     initWebSocket();
 
     initDepthCanvas();
     updateDepthInfo();
+    initTrajCanvas();
     initROVImage();
     initModeSystem();
     initJoystick();
@@ -60,6 +67,15 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 
+// COOLDOWN BUTTON
+function cooldownButton(btn, time = 1000) {
+    btn.disabled = true;
+    setTimeout(() => {
+        btn.disabled = false;
+    }, time);
+}
+
+
 // CONFIG
 function loadConfig() {
     fetch("/config")
@@ -77,70 +93,169 @@ function loadConfig() {
             DEPTH_CONFIG.danger = cfg.danger_depth;
             DEPTH_CONFIG.setpoint = cfg.setpoint_depth;
 
+            TRAJ_CONFIG.x = cfg.traj_x;
+            TRAJ_CONFIG.y = cfg.traj_y;
+
             updateDepthInfo();
+            updateTrajInfo();
         })
         .catch(err => console.error("Config error:", err));
 }
 
 
 
+// WEBSOCKET
+function initWebSocket() {
+    ws = new WebSocket("ws://localhost:8000/ws");
 
-// TRAJECTORY CANVAS
-function initCanvas() {
-    const canvas = document.getElementById("trajCanvas");
-    if (!canvas) return;
+    ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        const data = msg.telemetry;
 
-    const parent = canvas.parentElement;
-    const ctx = canvas.getContext("2d");
+        if (msg.timestamp) {
+            serverTime = msg.timestamp * 1000;
+        }
 
-    let x = 0;
-    let y = 0;
+        document.getElementById("datetime").innerText = msg.datetime;
 
-    let resizeTimeout;
+        if (msg.qr) {
+            updateQRSystem(msg.qr);
+        }
 
-    function resizeCanvas() {
-        const rect = parent.getBoundingClientRect();
+        // TELEMETRY
+        document.getElementById("t_setpoint").innerText =
+            "SETPOINT: " + DEPTH_CONFIG.setpoint;
 
-        if (!rect.width || !rect.height) return;
+        document.getElementById("t_height").innerText =
+            "HEIGHT: " + data.depth;
 
-        canvas.width = rect.width;
-        canvas.height = rect.height;
+        document.getElementById("t_heading").innerText =
+            "HEADING: " + data.heading;
 
-        x = canvas.width / 2;
-        y = canvas.height / 2;
-    }
+        document.getElementById("t_pressure").innerText =
+            "PRESSURE: " + data.pressure;
 
-    function handleResize() {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(resizeCanvas, 100);
-    }
+        data.pwm.forEach((val, i) => {
+            document.getElementById(`t_pwm${i+1}`).innerText = `PWM${i+1}: ${val}`;
+        });
 
-    window.addEventListener("load", resizeCanvas);
-    window.addEventListener("resize", handleResize);
+        // DEPTH
+        depthData.depth = data.depth;
+        updateDepthInfo();
 
-    const observer = new ResizeObserver(resizeCanvas);
-    observer.observe(parent);
+        if (msg.trajectory) {
+            trajPath.push(msg.trajectory);
 
-    resizeCanvas();
+            if (trajPath.length > 500) {
+                trajPath.shift();
+            }
+        }
+        
+        document.getElementById("status").innerText = "● SERIAL: ONLINE";
 
-    function draw() {
-        ctx.fillStyle = "#04080f";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (msg.log) {
+            addLog(msg.log);
+        }
+    };
 
-        ctx.fillStyle = "cyan";
-        ctx.beginPath();
-        ctx.arc(x, y, 5, 0, Math.PI * 2);
-        ctx.fill();
-
-        x += (Math.random() - 0.5) * 10;
-        y += (Math.random() - 0.5) * 10;
-
-        x = Math.max(0, Math.min(canvas.width, x));
-        y = Math.max(0, Math.min(canvas.height, y));
-    }
-
-    setInterval(draw, 100);
+    ws.onclose = () => {
+        document.getElementById("status").innerText = "◌ SERIAL: OFFLINE";
+    };
 }
+
+function sendLogToBackend(text) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: "log",
+            message: text
+        }));
+    } else {
+        console.log("WS belum connect");
+    }
+}
+
+
+// SERIAL
+function loadPorts() {
+    fetch("/serial/ports")
+        .then(res => res.json())
+        .then(data => {
+            const select = document.querySelector(".port-select");
+            select.innerHTML = "";
+
+            if (data.ports.length === 0) {
+                const opt = document.createElement("option");
+                opt.text = "NO DEVICE";
+                select.appendChild(opt);
+
+                updateSerialButtons();
+                return;
+            }
+
+            data.ports.forEach(p => {
+                const opt = document.createElement("option");
+                opt.value = p;
+                opt.text = p;
+                select.appendChild(opt);
+            });
+
+            updateSerialButtons();
+        });
+}
+
+function connectSerial() {
+    const btn = document.querySelector(".connect-btn");
+    cooldownButton(btn, 1000);
+
+    const port = document.querySelector(".port-select").value;
+
+    fetch("/serial/connect", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({port})
+    })
+    .then(res => res.json())
+    .then(res => {
+        if (res.success) {
+            console.log("[SERIAL] CONNECT SUCCESS");
+        } else {
+            console.log("[SERIAL] CONNECT FAILED");
+        }
+    });
+}
+
+function disconnectSerial() {
+    const btn = document.querySelector(".stop-btn");
+    cooldownButton(btn, 1000);
+
+    fetch("/serial/disconnect", {method: "POST"})
+    .then(() => {
+        console.log("[SERIAL] DISCONNECT");
+    });
+}
+
+function refreshPorts() {
+    const btn = document.querySelector(".refresh-btn");
+    cooldownButton(btn, 1000);
+
+    loadPorts();
+    console.log("[SERIAL] REFRESH PORT");
+}
+
+function updateSerialButtons() {
+    const select = document.querySelector(".port-select");
+    const connectBtn = document.querySelector(".connect-btn");
+    const stopBtn = document.querySelector(".stop-btn");
+
+    const value = select.value;
+
+    const noDevice = !value || value === "NO DEVICE";
+
+    connectBtn.disabled = noDevice;
+    stopBtn.disabled = noDevice;
+}
+
+
 
 
 // CAMERA CONTROL
@@ -315,8 +430,7 @@ function openFullscreenCam(id) {
     const overlay = document.getElementById("fullscreenOverlay");
     const fullscreenImg = document.getElementById("fullscreenImage");
 
-    // COPY STREAM
-    fullscreenImg.src = sourceImg.src;
+    fullscreenImg.src = sourceImg.src; // COPY STREAM
 
     // SHOW POPUP
     overlay.classList.add("active");
@@ -393,69 +507,6 @@ function clearQRHistory() {
 }
 
 
-
-
-// WEBSOCKET
-function initWebSocket() {
-    ws = new WebSocket("ws://localhost:8000/ws");
-
-    ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        const data = msg.telemetry;
-
-        if (msg.timestamp) {
-            serverTime = msg.timestamp * 1000;
-        }
-
-        document.getElementById("datetime").innerText = msg.datetime;
-
-        if (msg.qr) {
-            updateQRSystem(msg.qr);
-        }
-
-        // TELEMETRY
-        document.getElementById("t_setpoint").innerText =
-            "SETPOINT: " + DEPTH_CONFIG.setpoint;
-
-        document.getElementById("t_height").innerText =
-            "HEIGHT: " + data.depth;
-
-        document.getElementById("t_heading").innerText =
-            "HEADING: " + data.heading;
-
-        document.getElementById("t_pressure").innerText =
-            "PRESSURE: " + data.pressure;
-
-        data.pwm.forEach((val, i) => {
-            document.getElementById(`t_pwm${i+1}`).innerText = `PWM${i+1}: ${val}`;
-        });
-
-        // DEPTH
-        depthData.depth = data.depth;
-        updateDepthInfo();
-        
-        document.getElementById("status").innerText = "● SERIAL: ONLINE";
-
-        if (msg.log) {
-            addLog(msg.log);
-        }
-    };
-
-    ws.onclose = () => {
-        document.getElementById("status").innerText = "◌ SERIAL: OFFLINE";
-    };
-}
-
-function sendLogToBackend(text) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: "log",
-            message: text
-        }));
-    } else {
-        console.log("WS belum connect");
-    }
-}
 
 
 // DEPTH
@@ -568,6 +619,142 @@ function updateDepthInfo() {
         card.classList.remove("danger");
         dNum.classList.remove("danger");
     }
+}
+
+
+
+// Trajectory
+function initTrajCanvas() {
+    const canvas = document.getElementById("trajCanvas");
+    const ctx = canvas.getContext("2d");
+
+    function resizeCanvas() {
+        const parent = canvas.parentElement;
+
+        const maxW = parent.clientWidth;
+        const maxH = parent.clientHeight;
+
+        const ratio = TRAJ_CONFIG.x / TRAJ_CONFIG.y;
+
+        let width = maxW;
+        let height = width / ratio;
+
+        if (height > maxH) {
+            height = maxH;
+            width = height * ratio;
+        }
+
+        canvas.style.width = width + "px";
+        canvas.style.height = height + "px";
+
+        canvas.width = width;
+        canvas.height = height;
+    }
+
+    function cmToPx(x, y) {
+        const px = (x / TRAJ_CONFIG.x) * canvas.width;
+        const py = (y / TRAJ_CONFIG.y) * canvas.height;
+
+        return { x: px, y: py };
+    }
+
+    function drawGrid() {
+        const meterX = TRAJ_CONFIG.x / 100;
+        const meterY = TRAJ_CONFIG.y / 100;
+
+        let gridStep = 1;
+
+        const maxMeter = Math.max(meterX, meterY);
+        if (maxMeter <= 5) gridStep = 0.5;
+        else if (maxMeter <= 10) gridStep = 1;
+        else if (maxMeter <= 20) gridStep = 2;
+        else if (maxMeter <= 50) gridStep = 5;
+        else gridStep = 10;
+
+        const pxPerMeterX = canvas.width / meterX;
+        const pxPerMeterY = canvas.height / meterY;
+
+        ctx.strokeStyle = "#1f2937";
+        ctx.lineWidth = 1;
+
+        for (let x = 0; x <= meterX; x += gridStep) {
+            const px = x * pxPerMeterX;
+            ctx.beginPath();
+            ctx.moveTo(px, 0);
+            ctx.lineTo(px, canvas.height);
+            ctx.stroke();
+        }
+
+        for (let y = 0; y <= meterY; y += gridStep) {
+            const py = y * pxPerMeterY;
+            ctx.beginPath();
+            ctx.moveTo(0, py);
+            ctx.lineTo(canvas.width, py);
+            ctx.stroke();
+        }
+    }
+
+    function drawPath() {
+        if (trajPath.length < 2) return;
+
+        ctx.beginPath();
+
+        trajPath.forEach((p, i) => {
+            const pos = cmToPx(p.x, p.y);
+
+            if (i === 0) {
+                ctx.moveTo(pos.x, pos.y);
+            } else {
+                ctx.lineTo(pos.x, pos.y);
+            }
+        });
+
+        ctx.strokeStyle = "#22c55e"; // hijau
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    function drawRobot() {
+        if (trajPath.length === 0) return;
+
+        const last = trajPath[trajPath.length - 1];
+        const pos = cmToPx(last.x, last.y);
+
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+
+        ctx.fillStyle = "#ef4444";
+        ctx.fill();
+
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    function render() {
+        resizeCanvas();
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        drawGrid();
+        drawPath();
+        drawRobot();
+
+        requestAnimationFrame(render);
+    }
+
+    render();
+}
+
+function updateTrajInfo() {
+    const meterX = (TRAJ_CONFIG.x / 100).toFixed(1);
+    const meterY = (TRAJ_CONFIG.y / 100).toFixed(1);
+
+    const cleanX = meterX.endsWith(".0") ? parseInt(meterX) : meterX;
+    const cleanY = meterY.endsWith(".0") ? parseInt(meterY) : meterY;
+
+    document.getElementById("trajInfo").innerText =
+        `${cleanX} x ${cleanY} meter`;
 }
 
 

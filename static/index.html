@@ -181,6 +181,7 @@
                 <div class="traj-box">
                     <canvas id="trajCanvas"></canvas>
                 </div>
+                <div class="traj-info" id="trajInfo">--</div>
             </div>
 
         </div>
@@ -212,15 +213,15 @@
 
             <!-- CONNECT -->
             <div class="op-buttons">
-                <button class="btn connect-btn op-btn">
+                <button class="btn connect-btn op-btn" onclick="connectSerial()">
                     CONNECT
                 </button>
 
-                <button class="btn stop-btn op-btn">
+                <button class="btn stop-btn op-btn" onclick="disconnectSerial()">
                     STOP
                 </button>
 
-                <button class="btn refresh-btn op-btn">
+                <button class="btn refresh-btn op-btn" onclick="refreshPorts()">
                     <i class="fa-solid fa-rotate-right"></i>
                 </button>
             </div>
@@ -228,11 +229,11 @@
             <!-- MODE -->
             <div class="mode-grid">
 
-                <button class="mode-btn active">
+                <button class="mode-btn">
                     AUTO
                 </button>
 
-                <button class="mode-btn">
+                <button class="mode-btn active">
                     KEYBOARD
                 </button>
 

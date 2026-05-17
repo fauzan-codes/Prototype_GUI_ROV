@@ -806,19 +806,21 @@ body {
 .row-top {
     display: flex;
     gap: 0.5rem;
+    height: 21rem;
 }
 
 /* DEPTH */
 .depth-card {
-    width: 20%;
+    width: 25%;
     min-width: 4.5rem;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: space-between;
 }
 
 .depth-card.danger {
-    border: 1px solid #ef4444;
+    border: 1px solid #991b1b;
     box-shadow: 0 0 10px rgba(239,68,68,0.25);
     transition: 0.25s ease;
 }
@@ -831,6 +833,7 @@ body {
 .depth-container {
     width: 100%;
     min-width: 3rem;
+    max-width: 5rem;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -839,8 +842,8 @@ body {
 #depthCanvas {
     width: 100%;
     min-width: 3rem;
-    max-width: 5rem;
-    height: 220px;
+    max-width: 4rem;
+    height: 14rem;
     background: #020617;
     border: 1px solid #1f2937;
     border-radius: 6px;
@@ -848,6 +851,8 @@ body {
 
 .depth-info-bottom {
     width: 100%;
+    min-width: 3rem;
+    max-width: 4rem;
     margin-top: 0.2rem;
     font-size: 0.625rem;
     text-align: left;
@@ -855,6 +860,7 @@ body {
 
     display: flex;
     flex-direction: column;
+    justify-content: center;
     gap: 1px;
 
     min-height: 60px;
@@ -864,6 +870,7 @@ body {
     color: #ef4444;
     font-weight: 600;
     letter-spacing: 1px;
+    padding-bottom: 0.1rem;
 
     opacity: 0;
     transition: opacity 0.25s ease;
@@ -880,16 +887,18 @@ body {
 
 .d-num.danger {
     color: #ef4444;
+    font-weight: 500;
 }
 
 
 
 /* TRAJECTORY */
 .traj-card {
-    width: 80%;
+    width: 75%;
     display: flex;
     align-items: center;
     flex-direction: column;
+    align-items: center;
 }
 
 .traj-card h3 {
@@ -898,11 +907,18 @@ body {
 }
 
 .traj-box {
-    width: 90%;
-    height: 90%;
-    background: #020617;
+    width: 100%;
+    height: 100%;
+
+    /* background: #020617; */
     border-radius: 0.375rem;
-    border: 1px solid #1f2937;
+    /* border: 1px solid #1f2937; */
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    overflow: hidden;
 }
 
 .traj-box canvas {
@@ -910,6 +926,15 @@ body {
     height: 100%;
     display: block;
     border-radius: 0.375rem;
+    background: #020617;
+    border: 1px solid #1f2937;
+}
+
+.traj-info {
+    font-size: 0.6rem;
+    color: #64748b;
+    margin-top: 0.2rem;
+    text-align: center;
 }
 
 
