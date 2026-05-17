@@ -57,11 +57,12 @@ SUB_TITLE = "REMOTELY OPERATED VEHICLE  ·  MONITORING & CONTROL"
 UNIVERSITY = "UNIVERSITAS NEGERI SURABAYA"
 TEAM_NAME = "SEADIVER TEAM"
 
-DANGER_DEPTH = 200  #cm
-POOL_DEPTH = 300    #cm
+DANGER_DEPTH = 200      #cm
+POOL_DEPTH = 300        #cm
+SETPOINT_DEPTH = 150    #cm
 
-TRAJECTORY_X = 5000 #cm
-TRAJECTORY_Y = 5000 #cm
+TRAJECTORY_X = 5000     #cm
+TRAJECTORY_Y = 5000     #cm
 
 
 app = FastAPI()
@@ -86,7 +87,11 @@ def get_config():
         "title": TITLE,
         "subtitle": SUB_TITLE,
         "university": UNIVERSITY,
-        "team": TEAM_NAME
+        "team": TEAM_NAME,
+
+        "pool_depth": POOL_DEPTH,
+        "danger_depth": DANGER_DEPTH,
+        "setpoint_depth": SETPOINT_DEPTH
     }
 
 
@@ -408,8 +413,7 @@ async def websocket_endpoint(ws: WebSocket):
                     add_log(msg.get("message"))
 
             data = {
-                "setpoint": random.randint(0, 300),
-                "depth": random.randint(0, 300),
+                "depth": random.randint(0, POOL_DEPTH),
                 "heading": random.randint(0, 360),
                 "pressure": random.randint(900, 1100),
                 "pwm": [random.randint(1000, 2000) for _ in range(6)]

@@ -10,6 +10,15 @@ let lastQRTime = 0;
 
 let ws = null;
 
+let DEPTH_CONFIG = {
+    pool: 300,
+    danger: 200,
+    setpoint: 0
+};
+let depthData = {
+    depth: 0,
+};
+
 let joystick = null;
 let currentMode = "AUTO";
 let modeCooldown = false;
@@ -20,6 +29,9 @@ document.addEventListener("DOMContentLoaded", () => {
     loadConfig();
     initCanvas();
     initWebSocket();
+
+    initDepthCanvas();
+    updateDepthInfo();
     initROVImage();
     initModeSystem();
     initJoystick();
@@ -61,6 +73,11 @@ function loadConfig() {
             document.getElementById("subtitle").innerText = cfg.subtitle;
             document.getElementById("team").innerText = cfg.team;
 
+            DEPTH_CONFIG.pool = cfg.pool_depth;
+            DEPTH_CONFIG.danger = cfg.danger_depth;
+            DEPTH_CONFIG.setpoint = cfg.setpoint_depth;
+
+            updateDepthInfo();
         })
         .catch(err => console.error("Config error:", err));
 }
@@ -386,35 +403,37 @@ function initWebSocket() {
         const msg = JSON.parse(event.data);
         const data = msg.telemetry;
 
-        // ambilwaktu
         if (msg.timestamp) {
-            serverTime = msg.timestamp * 1000; // convert ke ms
+            serverTime = msg.timestamp * 1000;
         }
 
-        // DATETIME
         document.getElementById("datetime").innerText = msg.datetime;
 
-        // QRSYSTEM
         if (msg.qr) {
             updateQRSystem(msg.qr);
         }
 
         // TELEMETRY
-        document.getElementById("t_setpoint").innerText = "SETPOINT: " + data.setpoint;
-        document.getElementById("t_height").innerText = "HEIGHT: " + data.depth;
-        document.getElementById("t_heading").innerText = "HEADING: " + data.heading;
-        document.getElementById("t_pressure").innerText = "PRESSURE: " + data.pressure;
+        document.getElementById("t_setpoint").innerText =
+            "SETPOINT: " + DEPTH_CONFIG.setpoint;
 
-        // PWM
+        document.getElementById("t_height").innerText =
+            "HEIGHT: " + data.depth;
+
+        document.getElementById("t_heading").innerText =
+            "HEADING: " + data.heading;
+
+        document.getElementById("t_pressure").innerText =
+            "PRESSURE: " + data.pressure;
+
         data.pwm.forEach((val, i) => {
             document.getElementById(`t_pwm${i+1}`).innerText = `PWM${i+1}: ${val}`;
         });
 
-        // DEPTH BAR
-        document.getElementById("depth-fill").style.height =
-            (data.depth / 300 * 100) + "%";
-
-        // STATUS
+        // DEPTH
+        depthData.depth = data.depth;
+        updateDepthInfo();
+        
         document.getElementById("status").innerText = "● SERIAL: ONLINE";
 
         if (msg.log) {
@@ -437,6 +456,120 @@ function sendLogToBackend(text) {
         console.log("WS belum connect");
     }
 }
+
+
+// DEPTH
+function initDepthCanvas() {
+    const canvas = document.getElementById("depthCanvas");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+
+    function resize() {
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+    }
+
+    window.addEventListener("resize", resize);
+    resize();
+
+    function draw() {
+        const w = canvas.width;
+        const h = canvas.height;
+
+        ctx.clearRect(0, 0, w, h);
+
+        const pool = DEPTH_CONFIG.pool;
+        const danger = DEPTH_CONFIG.danger;
+
+        const depth = depthData.depth;
+        const sp = DEPTH_CONFIG.setpoint;
+
+        // bg
+        ctx.fillStyle = "#020617";
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.strokeStyle = "#1f2937";
+        ctx.strokeRect(0, 0, w, h);
+
+        // depthline
+        const depthY = (depth / pool) * h;
+
+        ctx.strokeStyle = "#38bdf8";
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(0, depthY);
+        ctx.lineTo(w, depthY);
+        ctx.stroke();
+
+        // setdanger
+        const dangerY = (danger / pool) * h;
+
+        ctx.strokeStyle = "red";
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, dangerY);
+        ctx.lineTo(w, dangerY);
+        ctx.stroke();
+
+        // setpoint
+        const spY = (sp / pool) * h;
+
+        ctx.strokeStyle = "#22c55e";
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(0, spY);
+        ctx.lineTo(w, spY);
+        ctx.stroke();
+
+        // scale
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "10px Poppins";
+
+        const step = pool / 5;
+
+        for (let i = 0; i <= pool; i += step) {
+            const y = (i / pool) * h;
+
+            ctx.beginPath();
+            ctx.moveTo(w - 8, y);
+            ctx.lineTo(w, y);
+            ctx.strokeStyle = "#64748b";
+            ctx.stroke();
+
+            ctx.fillText(i.toFixed(0), 2, y - 2);
+        }
+    }
+
+    setInterval(draw, 100);
+}
+
+function updateDepthInfo() {
+    const H = DEPTH_CONFIG.pool;
+    const depth = depthData.depth;
+    const sp = DEPTH_CONFIG.setpoint;
+    const box = document.querySelector(".depth-info-bottom");
+
+    box.querySelector(".d-num").innerText = depth;
+    box.querySelector(".h-num").innerText = H;
+    box.querySelector(".sp-num").innerText = sp;
+
+    const dangerEl = box.querySelector(".danger-text");
+    const card = document.querySelector(".depth-card");
+    const dNum = box.querySelector(".d-num");
+
+    if (depth >= DEPTH_CONFIG.danger) {
+        dangerEl.style.opacity = "1";
+        card.classList.add("danger");
+        dNum.classList.add("danger");
+    } else {
+        dangerEl.style.opacity = "0";
+        card.classList.remove("danger");
+        dNum.classList.remove("danger");
+    }
+}
+
 
 // ROV IMAGE HANDLER
 function initROVImage() {
