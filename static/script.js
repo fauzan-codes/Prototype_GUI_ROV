@@ -34,6 +34,8 @@ let joystick = null;
 let currentMode = "KEYBOARD";
 let modeCooldown = false;
 
+let lastRenderedLogCount = 0;
+
 let isRecording = false;
 let hasRecording = false;
 let replayPlaying = false;
@@ -290,17 +292,19 @@ function applySession(state) {
         }
     }
 
-
     // LOGS
     if (Array.isArray(state.logs)) {
         const box = document.getElementById("logBox");
-        box.innerHTML = "";
+        const currentCount = box.children.length;
 
-        state.logs.forEach(log => {
-            addLog(log);
-        });
+        if (state.logs.length !== currentCount) {
+            if (state.logs.length > lastRenderedLogCount) {
+                const newLogs = state.logs.slice(lastRenderedLogCount);
+                newLogs.forEach(log => {renderLog(log);});
+                lastRenderedLogCount = state.logs.length;
+            }
+        }
     }
-
 
     // RECORD
     if (state.record) {
@@ -454,6 +458,23 @@ function updateSessionRealtime(state) {
             .innerText =
             state.qr.main.time;
     }
+
+    // LOG REALTIME
+    if (Array.isArray(state.logs)) {
+        const box = document.getElementById("logBox");
+        const lastUI = box.lastElementChild?.innerText;
+        const lastState = state.logs[state.logs.length - 1];
+
+        if (state.logs.length < lastRenderedLogCount) {
+            document.getElementById("logBox").innerHTML = "";
+            lastRenderedLogCount = 0;
+        }
+        if (state.logs.length > lastRenderedLogCount) {
+            const newLogs = state.logs.slice(lastRenderedLogCount);
+            newLogs.forEach(log => {renderLog(log);});
+            lastRenderedLogCount = state.logs.length;
+        }
+    }
 }
 
 
@@ -510,9 +531,9 @@ async function connectSerial() {
         const res = await postJSON("/serial/connect", { port });
 
         if (res.success) {
-            addLog(`[SERIAL] CONNECTED ${port}`);
+            console.log(`[SERIAL] CONNECTED ${port}`);
         } else {
-            addLog(`[SERIAL] FAILED`);
+            console.log(`[SERIAL] FAILED`);
         }
 
     } catch (err) {
@@ -531,7 +552,7 @@ async function disconnectSerial() {
         await fetch("/serial/disconnect", {
             method: "POST"
         });
-        addLog("[SERIAL] DISCONNECTED");
+        console.log("[SERIAL] DISCONNECTED");
     } catch (err) {
         console.error(err);
     }
@@ -655,10 +676,9 @@ async function captureCam(id) {
         const result = await res.json();
 
         if (result.success) {
-            addLog(`[CAPTURE] CAM ${id}`);
-
+            console.log(`[CAPTURE] CAM ${id}`);
         } else {
-            addLog(`[CAPTURE] FAILED CAM ${id}`);
+            console.log(`[CAPTURE] FAILED CAM ${id}`);
         }
 
     } catch (err) {
@@ -726,6 +746,7 @@ function initDepthCanvas() {
         const h = canvas.height;
 
         ctx.clearRect(0, 0, w, h);
+
         ctx.fillStyle = "#020617";
         ctx.fillRect(0, 0, w, h);
 
@@ -733,33 +754,96 @@ function initDepthCanvas() {
         const pool = DEPTH_CONFIG.pool;
         const danger = DEPTH_CONFIG.danger;
         const setpoint = DEPTH_CONFIG.setpoint;
+
         const depthY = (depth / pool) * h;
         const dangerY = (danger / pool) * h;
         const spY = (setpoint / pool) * h;
 
-        // DEPTH
+        const totalLines = 5;
+        const step = pool / totalLines;
+
+        ctx.font = "11px Poppins";
+        ctx.fillStyle = "rgba(255,255,255,0.45)";
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        ctx.lineWidth = 1;
+
+        for (let i = 1; i <= totalLines; i++) {
+            const value = step * i;
+            const y = (value / pool) * h;
+
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.strokeStyle = "rgba(255,255,255,0.1)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.font = "11px Poppins";
+            ctx.fillStyle = "rgba(255,255,255,0.6)";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+
+            ctx.fillText(
+                `${Math.round(value)}`,
+                2,
+                y
+            );
+
+            ctx.textAlign = "right";
+            ctx.fillStyle = "rgba(255,255,255,0.35)";
+
+            ctx.fillText(
+                "─",
+                w,
+                y
+            );
+        }
+
         ctx.strokeStyle = "#38bdf8";
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
+
         ctx.beginPath();
         ctx.moveTo(0, depthY);
         ctx.lineTo(w, depthY);
         ctx.stroke();
+        ctx.fillStyle = "#38bdf8";
 
-        // DANGER
-        ctx.strokeStyle = "red";
-        ctx.setLineDash([5, 5]);
+        ctx.fillText(
+            ``,
+            w,
+            depthY
+        );
+
+        ctx.strokeStyle = "#ef4444";
+        ctx.setLineDash([6, 6]);
+
         ctx.beginPath();
         ctx.moveTo(0, dangerY);
         ctx.lineTo(w, dangerY);
         ctx.stroke();
 
-        // SETPOINT
-        ctx.strokeStyle = "#22c55e";
+        ctx.fillStyle = "#ef4444";
+        ctx.fillText(
+            ``,
+            w,
+            dangerY
+        );
+
         ctx.setLineDash([]);
+        ctx.strokeStyle = "#22c55e";
+
         ctx.beginPath();
         ctx.moveTo(0, spY);
         ctx.lineTo(w, spY);
         ctx.stroke();
+
+        ctx.fillStyle = "#22c55e";
+
+        ctx.fillText(
+            ``,
+            w,
+            spY
+        );
     }
 
     setInterval(draw, 100);
@@ -991,24 +1075,24 @@ function initJoystick() {
 
     window.addEventListener(
         "gamepadconnected",
-        (e) => {
+        async (e) => {
             joystick = e.gamepad;
             statusEl.innerText = `● JOYSTICK CONNECTED : ${joystick.id}`;
             statusEl.classList.add("active");
 
-            addLog(`[JOY] CONNECTED ${joystick.id}`);
+            await sendLog(`[JOY] CONNECTED ${joystick.id}`);
             pollJoystick();
         }
     );
 
     window.addEventListener(
         "gamepaddisconnected",
-        () => {
+        async () => {
             joystick = null;
             statusEl.innerText = "◌ JOYSTICK DISCONNECTED";
             statusEl.classList.remove("active");
 
-            addLog("[JOY] DISCONNECTED");
+            await sendLog("[JOY] DISCONNECTED");
         }
     );
 }
@@ -1027,7 +1111,7 @@ function pollJoystick() {
 async function sendPID() {
     const btn = document.getElementById("applyPidBtn");
     if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 1000);
+    cooldownButton(btn, 3000);
 
     const kp = parseFloat(document.getElementById("kp").value);
     const ki = parseFloat(document.getElementById("ki").value);
@@ -1045,7 +1129,7 @@ async function sendPID() {
         }
     });
 
-    addLog(`[PID] Kp=${kp} Ki=${ki} Kd=${kd}`);
+    await sendLog(`[PID] Kp=${kp} Ki=${ki} Kd=${kd}`);
 }
 
 
@@ -1079,27 +1163,51 @@ async function resetPID() {
         }
     });
 
-    addLog("[PID] RESET");
+    await sendLog("[PID] RESET");
 }
 
 
 // LOG
-function addLog(text) {
-    const box = document.getElementById("logBox");
-    const line = document.createElement("div");
+async function sendLog(text) {
+    try {
+        await postJSON("/log", {
+            message: text
+        });
+    } catch (err) {
+        console.error("[LOG SEND]", err);
+    }
+}
 
+
+function renderLog(text) {
+    const box = document.getElementById("logBox");
+    if (!box) return;
+    const line = document.createElement("div");
     line.innerText = text;
     box.appendChild(line);
     box.scrollTop = box.scrollHeight;
 }
 
 
-function clearLog() {
+async function clearLog() {
     const btn = document.getElementById("clearLogBtn");
     if (isButtonLocked(btn)) return;
     cooldownButton(btn, 500);
 
-    document.getElementById("logBox").innerHTML = "";
+    try {
+        const res = await fetch("/log/clear", {method: "POST"});
+        const result = await res.json();
+
+        if (!result.success) return;
+
+        const box = document.getElementById("logBox");
+        box.innerHTML = "";
+        lastRenderedLogCount = 0;
+
+        console.log("[LOG] CLEARED");
+    } catch (err) {
+        console.error("[LOG CLEAR]", err);
+    }
 }
 
 
@@ -1115,12 +1223,12 @@ function copyLog() {
 }
 
 
-function fakeLog() {
+async function fakeLog() {
     const btn = document.getElementById("testLogBtn");
     if (isButtonLocked(btn)) return;
     cooldownButton(btn, 500);
 
-    addLog("[INFO] IMU OK | DEPTH OK | PWM OK");
+    await sendLog("[INFO] IMU OK | DEPTH OK | PWM OK");
 }
 
 
@@ -1195,7 +1303,7 @@ async function startRecording() {
             replayPlaying: false
         }
     });
-    addLog("[REC] STARTED");
+    await sendLog("[REC] STARTED");
 }
 
 
@@ -1219,7 +1327,7 @@ async function stopRecording() {
             replayPlaying: false
         }
     });
-    addLog("[REC] SAVED");
+    await sendLog("[REC] SAVED");
 }
 
 
@@ -1243,7 +1351,7 @@ async function replayRecording() {
         }
     });
 
-    addLog("[REPLAY] STARTED");
+    await sendLog("[REPLAY] STARTED");
 
     setTimeout(async () => {
         replayPlaying = false;
@@ -1256,7 +1364,7 @@ async function replayRecording() {
                 replayPlaying: false
             }
         });
-        addLog("[REPLAY] FINISHED");
+        await sendLog("[REPLAY] FINISHED");
     }, 5000);
 }
 
@@ -1272,7 +1380,7 @@ async function takeSnapshot() {
 
     if (isButtonLocked(btn)) return;
     cooldownButton(btn, 1000);
-    addLog("[SNAPSHOT] CAPTURED");
+    await sendLog("[SNAPSHOT] CAPTURED");
 }
 
 
@@ -1290,10 +1398,10 @@ async function resetSession() {
         trajPath = [];
         document.getElementById("logBox").innerHTML = "";
         document.getElementById("qrHistoryBox").innerHTML = "";
+        lastRenderedLogCount = 0;
 
         await loadSession();
-        addLog("[SYSTEM] RESET");
-
+        console.log("[SYSTEM] RESET");
     } catch (err) {
         console.error(err);
     }
@@ -1313,5 +1421,5 @@ async function emergencyStop() {
         }
     });
 
-    addLog("[EMERGENCY] STOP");
+    await sendLog("[EMERGENCY] STOP");
 }

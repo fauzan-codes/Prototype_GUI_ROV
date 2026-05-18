@@ -92,7 +92,7 @@ UNIVERSITY = "UNIVERSITAS NEGERI SURABAYA"
 TEAM_NAME = "SEADIVER TEAM"
 
 POOL_DEPTH = 300
-DANGER_DEPTH = 200
+DANGER_DEPTH = 180
 SETPOINT_DEPTH = 150
 
 TRAJECTORY_X = 500
@@ -164,6 +164,31 @@ def add_log(message):
 
     if len(session_state["logs"]) > 300:
         session_state["logs"].pop(0)
+
+@app.post("/log")
+async def create_log(req: Request):
+    data = await req.json()
+    message = data.get("message", "").strip()
+
+    if not message:
+        return {
+            "success": False
+        }
+
+    add_log(message)
+    return {
+        "success": True
+    }
+
+@app.post("/log/clear")
+def clear_logs():
+    session_state["logs"] = []
+    log_buffer.clear()
+
+    print("[INFO] CLEARED")
+    return {
+        "success": True
+    }
 
 
 # =============== SERIAL SYSTEM ===============
@@ -462,7 +487,6 @@ def reset_session():
 # =============== SHUTDOWN ===============
 @app.on_event("shutdown")
 def shutdown_server():
-
     print("[SERVER] SHUTDOWN")
 
     for cam in cams.values():
