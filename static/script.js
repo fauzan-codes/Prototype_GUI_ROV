@@ -29,6 +29,11 @@ let joystick = null;
 let currentMode = "AUTO";
 let modeCooldown = false;
 
+
+let isRecording = false;
+let hasRecording = false;
+let replayPlaying = false;
+
 document.addEventListener("DOMContentLoaded", () => {
     console.log("JS LOADED");
 
@@ -64,15 +69,56 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+
+
+    // SERIAL
+    document.getElementById("connectBtn").addEventListener("click", connectSerial);
+    document.getElementById("disconnectBtn").addEventListener("click", disconnectSerial);
+    document.getElementById("refreshPortsBtn").addEventListener("click", refreshPorts);
+
+    // CAMERA
+    document.getElementById("captureCam1Btn").addEventListener("click", () => captureCam(1));
+    document.getElementById("captureCam2Btn").addEventListener("click", () => captureCam(2));
+    document.getElementById("fullscreenBtn1").addEventListener("click", () => openFullscreenCam(1));
+    document.getElementById("fullscreenBtn2").addEventListener("click", () => openFullscreenCam(2));
+
+    // PID
+    document.getElementById("applyPidBtn").addEventListener("click", sendPID);
+    document.getElementById("resetPidBtn").addEventListener("click", resetPID);
+
+    // QR
+    document.getElementById("clearQRBtn").addEventListener("click", clearQRHistory);
+
+    // LOG
+    document.getElementById("clearLogBtn").addEventListener("click", clearLog);
+    document.getElementById("copyLogBtn").addEventListener("click", copyLog);
+    document.getElementById("testLogBtn").addEventListener("click", fakeLog);
+
+    // ADVANCED
+    document.getElementById("snapshotBtn").addEventListener("click", takeSnapshot);
+    document.getElementById("resetSessionBtn").addEventListener("click", resetSession);
+    document.getElementById("emergencyBtn").addEventListener("click", emergencyStop);
 });
 
 
 // COOLDOWN BUTTON
 function cooldownButton(btn, time = 1000) {
+    if (!btn) return;
+
+    btn.classList.add("cooldown");
     btn.disabled = true;
+
     setTimeout(() => {
+        btn.classList.remove("cooldown");
         btn.disabled = false;
     }, time);
+}
+
+function isButtonLocked(btn) {
+    return (
+        btn.disabled ||
+        btn.classList.contains("cooldown")
+    );
 }
 
 
@@ -123,17 +169,10 @@ function initWebSocket() {
         }
 
         // TELEMETRY
-        document.getElementById("t_setpoint").innerText =
-            "SETPOINT: " + DEPTH_CONFIG.setpoint;
-
-        document.getElementById("t_height").innerText =
-            "HEIGHT: " + data.depth;
-
-        document.getElementById("t_heading").innerText =
-            "HEADING: " + data.heading;
-
-        document.getElementById("t_pressure").innerText =
-            "PRESSURE: " + data.pressure;
+        document.getElementById("t_setpoint").innerText = "SETPOINT: " + DEPTH_CONFIG.setpoint;
+        document.getElementById("t_height").innerText = "HEIGHT: " + data.depth;
+        document.getElementById("t_heading").innerText = "HEADING: " + data.heading;
+        document.getElementById("t_pressure").innerText = "PRESSURE: " + data.pressure;
 
         data.pwm.forEach((val, i) => {
             document.getElementById(`t_pwm${i+1}`).innerText = `PWM${i+1}: ${val}`;
@@ -205,6 +244,8 @@ function loadPorts() {
 
 function connectSerial() {
     const btn = document.querySelector(".connect-btn");
+
+    if (isButtonLocked(btn)) return;
     cooldownButton(btn, 1000);
 
     const port = document.querySelector(".port-select").value;
@@ -226,6 +267,8 @@ function connectSerial() {
 
 function disconnectSerial() {
     const btn = document.querySelector(".stop-btn");
+
+    if (isButtonLocked(btn)) return;
     cooldownButton(btn, 1000);
 
     fetch("/serial/disconnect", {method: "POST"})
@@ -236,6 +279,8 @@ function disconnectSerial() {
 
 function refreshPorts() {
     const btn = document.querySelector(".refresh-btn");
+
+    if (isButtonLocked(btn)) return;
     cooldownButton(btn, 1000);
 
     loadPorts();
@@ -393,8 +438,11 @@ function toggleCam(id, el) {
 
 async function captureCam(id) {
     const btn = document.querySelectorAll(".capture")[id - 1];
-    try {
 
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 500);
+
+    try {
         btn.disabled = true;
         const response = await fetch(`/capture/${id - 1}`, {
             method: "POST"
@@ -410,12 +458,6 @@ async function captureCam(id) {
     catch (err) {
         console.error(err);
         sendLogToBackend(`[CAPTURE] ERROR CAM ${id}`);
-    }
-
-    finally {
-        setTimeout(() => {
-            btn.disabled = false;
-        }, 500);
     }
 }
 
@@ -494,8 +536,7 @@ function updateQRSystem(qrData) {
 
         document.getElementById("qrMainSide").innerText = "SISI - " + qrData.side;
         document.getElementById("qrMainRaw").innerText = qrData.raw;
-        document.getElementById("qrMainTime").innerText =
-            "Updated: " + timeStr;
+        document.getElementById("qrMainTime").innerText = "Updated: " + timeStr;
 
         lastQR = text;
         lastQRTime = now;
@@ -503,6 +544,11 @@ function updateQRSystem(qrData) {
 }
 
 function clearQRHistory() {
+    const btn = document.getElementById("clearQRBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 400);
+
     document.getElementById("qrHistoryBox").innerHTML = "";
 }
 
@@ -811,7 +857,7 @@ function initModeSystem() {
 
             modeCooldown = true;
             modeButtons.forEach(b => {
-                b.disabled = true;
+                cooldownButton(b, 1000);
             });
 
             modeButtons.forEach(b => {
@@ -825,11 +871,7 @@ function initModeSystem() {
 
             setTimeout(() => {
                 modeCooldown = false;
-                modeButtons.forEach(b => {
-                    b.disabled = false;
-                });
             }, 1000);
-
         });
 
     });
@@ -838,28 +880,20 @@ function initModeSystem() {
 
 // JOYSTICK
 function initJoystick() {
-
     const statusEl = document.getElementById("joystickStatus");
     window.addEventListener("gamepadconnected", (e) => {
         joystick = e.gamepad;
         console.log("Joystick connected:", joystick);
-
-        statusEl.innerText =
-            `● JOYSTICK CONNECTED : ${joystick.id}`;
+        statusEl.innerText = `● JOYSTICK CONNECTED : ${joystick.id}`;
 
         statusEl.classList.add("active");
         addLog(`[JOY] Connected : ${joystick.id}`);
-
         pollJoystick();
     });
 
     window.addEventListener("gamepaddisconnected", () => {
-
         joystick = null;
-
-        statusEl.innerText =
-            "● JOYSTICK DISCONNECTED";
-
+        statusEl.innerText = "● JOYSTICK DISCONNECTED";
         statusEl.classList.remove("active");
         addLog("[JOY] Disconnected");
     });
@@ -867,7 +901,6 @@ function initJoystick() {
 
 function pollJoystick() {
     function update() {
-
         if (!joystick) return;
 
         const gamepads = navigator.getGamepads();
@@ -897,17 +930,41 @@ function pollJoystick() {
 
 // PID
 function sendPID() {
+    const btn = document.getElementById("applyPidBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 1000);
+
     const kp = parseFloat(document.getElementById("kp").value).toFixed(4);
     const ki = parseFloat(document.getElementById("ki").value).toFixed(4);
     const kd = parseFloat(document.getElementById("kd").value).toFixed(4);
 
-    const text = `[PID] Kp=${kp} Ki=${ki} Kd=${kd}`;
-    sendLogToBackend(text)
+    sendLogToBackend(
+        `[PID] Kp=${kp} Ki=${ki} Kd=${kd}`
+    );
 }
 
 function syncPID(slider, id) {
     const value = parseFloat(slider.value).toFixed(4);
     document.getElementById(id).value = value;
+}
+
+function resetPID() {
+    const btn = document.getElementById("resetPidBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 1000);
+
+    ["kp", "ki", "kd"].forEach(id => {
+        document.getElementById(id).value = "0.0000";
+    });
+
+    document.querySelectorAll(".pid-slider")
+        .forEach(slider => {
+            slider.value = "0.0000";
+        });
+
+    sendLogToBackend("[PID] Reset");
 }
 
 
@@ -922,13 +979,147 @@ function addLog(text) {
 }
 
 function clearLog() {
+    const btn = document.getElementById("clearLogBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 400);
+
     document.getElementById("logBox").innerHTML = "";
+    sendLogToBackend("[INFO] Clear Done");
 }
 
 function copyLog() {
-    navigator.clipboard.writeText(document.getElementById("logBox").innerText);
+    const btn = document.getElementById("copyLogBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 400);
+
+    navigator.clipboard.writeText(
+        document.getElementById("logBox").innerText
+    );
+
+    sendLogToBackend("[INFO] Log Copied");
 }
 
 function fakeLog() {
-    sendLogToBackend("[INFO] IMU OK | DEPTH 1.23m | PWM UPDATED");
+    const btn = document.getElementById("testLogBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 500);
+
+    sendLogToBackend(
+        "[INFO] IMU OK | DEPTH 1.23m | PWM UPDATED"
+    );
 }
+
+
+
+// ================= RECORD SYSTEM =================
+const recordBtn = document.getElementById("recordBtn");
+const stopRecordBtn = document.getElementById("stopRecordBtn");
+const replayBtn = document.getElementById("replayBtn");
+
+recordBtn.addEventListener("click", startRecording);
+stopRecordBtn.addEventListener("click", stopRecording);
+replayBtn.addEventListener("click", replayRecording);
+
+function startRecording() {
+    if (isRecording) return;
+    if (isButtonLocked(recordBtn)) return;
+    cooldownButton(recordBtn, 1000);
+
+    isRecording = true;
+
+    recordBtn.classList.add("recording");
+    recordBtn.innerHTML = `
+        <i class="fa-solid fa-circle"></i>
+        RECORDING...
+    `;
+
+    stopRecordBtn.disabled = false;
+    replayBtn.disabled = true;
+    sendLogToBackend("[REC] Recording Started");
+}
+
+function stopRecording() {
+
+    if (!isRecording) return;
+    if (isButtonLocked(stopRecordBtn)) return;
+    cooldownButton(stopRecordBtn, 1000);
+
+    isRecording = false;
+    hasRecording = true;
+
+    recordBtn.classList.remove("recording");
+    recordBtn.innerHTML = `
+        <i class="fa-solid fa-circle"></i>
+        START RECORD
+    `;
+
+    stopRecordBtn.disabled = true;
+    replayBtn.disabled = false;
+    sendLogToBackend("[REC] Recording Saved");
+}
+
+function replayRecording() {
+    if (!hasRecording) return;
+    if (replayPlaying) return;
+    if (isButtonLocked(replayBtn)) return;
+    cooldownButton(replayBtn, 5000);
+
+    replayPlaying = true;
+
+    replayBtn.innerHTML = `
+        <i class="fa-solid fa-spinner fa-spin"></i>
+        PLAYING...
+    `;
+
+    sendLogToBackend("[REPLAY] Started");
+
+    setTimeout(() => {
+        replayPlaying = false;
+        replayBtn.innerHTML = `
+            <i class="fa-solid fa-play"></i>
+            REPLAY
+        `;
+
+        sendLogToBackend("[REPLAY] Finished");
+    }, 5000);
+}
+
+
+
+
+function takeSnapshot() {
+    const btn = document.getElementById("snapshotBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 1200);
+
+    sendLogToBackend("[SNAPSHOT] Captured");
+}
+
+function resetSession() {
+    const btn = document.getElementById("resetSessionBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 2000);
+
+    trajPath = [];
+
+    document.getElementById("qrHistoryBox").innerHTML = "";
+    document.getElementById("logBox").innerHTML = "";
+
+    sendLogToBackend("[SYSTEM] Session Reset");
+}
+
+function emergencyStop() {
+    const btn = document.getElementById("emergencyBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 3000);
+
+    sendLogToBackend("[EMERGENCY] STOP ACTIVATED");
+    console.log("!!! EMERGENCY STOP !!!");
+}
+

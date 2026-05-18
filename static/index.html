@@ -51,12 +51,11 @@
                                 <input type="checkbox" onchange="toggleCam(1, this)">
                                 <span class="slider"></span>
                             </label>
-                            <button class="cam-btn capture" onclick="captureCam(1)">
+                            <button class="btn cam-btn capture" id="captureCam1Btn">
                                 <i class="fa-solid fa-camera"></i>
                             </button>
-                            <button class="cam-btn fullscreen-btn"
-                                    id="fullscreenBtn1"
-                                    onclick="openFullscreenCam(1)">
+                            <button class="btn cam-btn fullscreen-btn"
+                                    id="fullscreenBtn1">
                                 <i class="fa-solid fa-expand"></i>
                             </button>
                         </div>
@@ -80,12 +79,11 @@
                                 <input type="checkbox" onchange="toggleCam(2, this)">
                                 <span class="slider"></span>
                             </label>
-                            <button class="cam-btn capture" onclick="captureCam(2)">
+                            <button class="btn cam-btn capture" id="captureCam2Btn">
                                 <i class="fa-solid fa-camera"></i>
                             </button>
-                            <button class="cam-btn fullscreen-btn"
-                                    id="fullscreenBtn2"
-                                    onclick="openFullscreenCam(2)">
+                            <button class="btn cam-btn fullscreen-btn"
+                                    id="fullscreenBtn2">
                                 <i class="fa-solid fa-expand"></i>
                             </button>
                         </div>
@@ -123,7 +121,7 @@
 
                     <div class="qr-history-header">
                         <span>HISTORY</span>
-                        <button class="btn" onclick="clearQRHistory()">CLEAR</button>
+                        <button class="btn" id="clearQRBtn">CLEAR</button>
                     </div>
 
                     <div id="qrHistoryBox" class="qr-history-box"></div>
@@ -213,16 +211,16 @@
 
             <!-- CONNECT -->
             <div class="op-buttons">
-                <button class="btn connect-btn op-btn" onclick="connectSerial()">
+                <button class="btn connect-btn op-btn" id="connectBtn">
                     CONNECT
                 </button>
 
-                <button class="btn stop-btn op-btn" onclick="disconnectSerial()">
+                <button class="btn stop-btn op-btn" id="disconnectBtn">
                     STOP
                 </button>
 
-                <button class="btn refresh-btn op-btn" onclick="refreshPorts()">
-                    <i class="fa-solid fa-rotate-right"></i>
+                <button class="btn refresh-btn op-btn" id="refreshPortsBtn">
+                    <i class="fa-solid fa-rotate-left"></i>
                 </button>
             </div>
 
@@ -341,13 +339,13 @@
             </div>
 
             <div class="pid-actions">
-                <button class="btn pid-reset">
-                    RESET
-                </button>
+                <button class="btn pid-reset" id="resetPidBtn">
+                RESET
+            </button>
 
-                <button class="btn pid-send" onclick="sendPID()">
-                    APPLY PID
-                </button>
+            <button class="btn pid-send" id="applyPidBtn">
+                APPLY PID
+            </button>
             </div>
         </div>
 
@@ -357,26 +355,74 @@
             <div id="logBox" class="log-box"></div>
 
             <div class="log-controls">
-                <button class="btn" onclick="clearLog()">CLEAR</button>
-                <button class="btn" onclick="copyLog()">COPY</button>
-                <button class="btn" onclick="fakeLog()">TEST</button>
+                <button class="btn" id="clearLogBtn">CLEAR</button>
+                <button class="btn" id="copyLogBtn">COPY</button>
+                <button class="btn" id="testLogBtn">TEST</button>
             </div>
         </div>
 
         <div class="card adv-card">
             <h3>ADVANCED CONTROL</h3>
 
-            <div class="adv-grid">
+            <!-- SNAPSHOT -->
+            <div class="snapshot-row">
 
-                <button class="btn">SCREENSHOT</button>
-                <button class="btn">REPLAY</button>
-                <button class="btn">RESET</button>
+                <label class="adv-checkbox">
+                    <input type="checkbox" id="autoSnapshot">
+                    <span class="checkmark"></span>
+                    <span class="checkbox-label">AUTO SNAPSHOT</span>
+                </label>
 
-                <button class="btn">AUTO MODE</button>
-                <button class="btn">MANUAL</button>
-                <button class="btn">EMERGENCY</button>
+                <button class="btn adv-btn snapshot-btn" id="snapshotBtn">
+                    <i class="fa-solid fa-camera"></i>
+                    SNAPSHOT
+                </button>
 
             </div>
+
+            <!-- REPLAY -->
+            <div class="replay-grid">
+
+                <!-- RECORD -->
+                <button class="btn adv-btn record-btn" id="recordBtn">
+                    <i class="fa-solid fa-circle"></i>
+                    START RECORD
+                </button>
+
+                <!-- STOP -->
+                <button class="btn adv-btn stop-record-btn"
+                        id="stopRecordBtn"
+                        disabled>
+                    <i class="fa-solid fa-stop"></i>
+                    STOP
+                </button>
+
+                <!-- REPLAY -->
+                <button class="btn adv-btn replay-btn"
+                        id="replayBtn"
+                        disabled>
+                    <i class="fa-solid fa-play"></i>
+                    REPLAY
+                </button>
+
+            </div>
+
+            <!-- SYSTEM -->
+            <div class="system-grid">
+
+                <button class="btn adv-btn reset-btn" id="resetSessionBtn">
+                    <i class="fa-solid fa-rotate-left"></i>
+                    RESET SESSION
+                </button>
+
+                <button class="btn adv-btn emergency-btn" id="emergencyBtn">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    EMERGENCY
+                </button>
+
+            </div>
+
+        </div>
         </div>
 
     </div>
