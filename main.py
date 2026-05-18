@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, Request
+from fastapi import FastAPI, WebSocket, Request, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, FileResponse
 from starlette.websockets import WebSocketDisconnect
@@ -26,6 +26,12 @@ app = FastAPI()
 
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+CAPTURE_DIR = Path("data/capture")
+CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+
+SNAPSHOT_DIR = Path("data/snapshot")
+SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
 shutdown_event = threading.Event()
 
@@ -381,8 +387,6 @@ def stop_camera(cam_id: int):
 
 
 # =============== CAPTURE ===============
-CAPTURE_DIR = Path("data/capture")
-CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @app.post("/capture/{cam_id}")
@@ -600,6 +604,47 @@ def clear_qr_history():
         "success": True
     }
 
+
+# =============== SNAPSHOT ===============
+def get_next_snapshot_number(date_str):
+    files = list(SNAPSHOT_DIR.glob(f"snapshot_{date_str}_*.png"))
+    numbers = []
+
+    for f in files:
+        match = re.search(r'_(\d{3})\.', f.name)
+        if match:
+            numbers.append(int(match.group(1)))
+
+    if not numbers:
+        return 1
+
+    return max(numbers) + 1
+
+@app.post("/snapshot")
+async def save_snapshot(file: UploadFile = File(...)):
+    try:
+        now = datetime.now()
+        date_str = now.strftime("%d-%m-%Y")
+        number = get_next_snapshot_number(date_str)
+        filename = f"snapshot_{date_str}_{number:03d}.png"
+        save_path = SNAPSHOT_DIR / filename
+
+        with open(save_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        add_log(f"[SNAPSHOT] SAVED {filename}")
+
+        return {
+            "success": True,
+            "filename": filename
+        }
+
+    except Exception as e:
+        add_log(f"[SNAPSHOT] ERROR {e}")
+        return {
+            "success": False
+        }
 
 
 # =============== RESET SESION ===============

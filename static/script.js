@@ -38,6 +38,8 @@ let modeCooldown = false;
 
 let lastRenderedLogCount = 0;
 
+let autoSnapshotInterval = null;
+
 let isRecording = false;
 let hasRecording = false;
 let replayPlaying = false;
@@ -1405,8 +1407,17 @@ async function replayRecording() {
 
 
 // ADVANCED
-async function toggleAutoSnapshot(e) {
-    await saveSession({advanced: {autoSnapshot: e.target.checked}});
+function toggleAutoSnapshot(e) {
+    const enabled = e.target.checked;
+    if (enabled) {
+        autoSnapshotInterval = setInterval(() => {
+            takeSnapshot();
+        }, 30000);
+    } else {
+        clearInterval(autoSnapshotInterval);
+    }
+
+    saveSession({advanced: {autoSnapshot: enabled}});
 }
 
 
@@ -1414,8 +1425,35 @@ async function takeSnapshot() {
     const btn = document.getElementById("snapshotBtn");
 
     if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 1000);
-    await sendLog("[SNAPSHOT] CAPTURED");
+    cooldownButton(btn, 1500);
+
+    try {
+        const canvas = await html2canvas(document.body, {
+            useCORS: true,
+            scale: 1.5
+        });
+
+        canvas.toBlob(async (blob) => {
+            const formData = new FormData();
+            formData.append("file", blob, "snapshot.png");
+
+            const res = await fetch("/snapshot", {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await res.json();
+
+            if (result.success) {
+                console.log(`[SNAPSHOT] ${result.filename}`);
+            } else {
+                console.log("[SNAPSHOT] FAILED");
+            }
+        });
+
+    } catch (err) {
+        console.error(err);
+    }
 }
 
 
