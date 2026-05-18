@@ -51,6 +51,11 @@ session_state = {
         "2": False
     },
 
+    "camera_status": {
+        0: False,
+        1: False
+    },
+
     # PID
     "pid": {
         "kp": 0.0,
@@ -332,16 +337,42 @@ def stream_camera(cam_id: int):
     cam.open()
 
     session_state["camera"][str(cam_id + 1)] = True
-    add_log(f"[CAM] CAMERA {cam_id + 1} ONLINE")
 
     async def generate():
+        is_online = False
+        last_fail_time = 0 
+
         try:
             while not shutdown_event.is_set():
                 frame = cam.read()
-                
+
                 if frame is None:
+                    now = time.time()
+
+                    # Kalau sebelumnya ONLINE → jadi OFFLINE
+                    if is_online:
+                        is_online = False
+                        session_state["camera_status"][cam_id] = False
+                        add_log(f"[CAM] CAMERA {cam_id + 1} OFFLINE")
+
+                    # ❗ jangan spam log (max 1x / 2 detik)
+                    if now - last_fail_time > 2:
+                        last_fail_time = now
+                        # optional: log connecting (boleh dimatikan kalau noisy)
+                        # add_log(f"[CAM] CAMERA {cam_id + 1} CONNECTING...")
+
                     await asyncio.sleep(0.1)
                     continue
+
+                # ===============================
+                # ✅ FRAME BERHASIL (ONLINE)
+                # ===============================
+                if not is_online:
+                    is_online = True
+
+                    if not session_state["camera_status"][cam_id]:
+                        session_state["camera_status"][cam_id] = True
+                        add_log(f"[CAM] CAMERA {cam_id + 1} ONLINE")
 
                 frame = process_qr(frame, cam_id)
                 ok, buffer = cv2.imencode(".jpg", frame)
@@ -365,7 +396,10 @@ def stream_camera(cam_id: int):
         finally:
             cam.release()
             session_state["camera"][str(cam_id + 1)] = False
-            add_log(f"[CAM] CAMERA {cam_id + 1} OFFLINE")
+
+            if session_state["camera_status"][cam_id]:
+                add_log(f"[CAM] CAMERA {cam_id + 1} OFFLINE")
+                session_state["camera_status"][cam_id] = False
 
     return StreamingResponse(
         generate(),
@@ -380,7 +414,10 @@ def stop_camera(cam_id: int):
         cam.release()
 
     session_state["camera"][str(cam_id + 1)] = False
-    add_log(f"[CAM] CAMERA {cam_id + 1} OFFLINE")
+    if session_state["camera_status"][cam_id]:
+        add_log(f"[CAM] CAMERA {cam_id + 1} OFFLINE")
+        session_state["camera_status"][cam_id] = False
+
     return {
         "success": True
     }

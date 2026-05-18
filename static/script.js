@@ -3,6 +3,7 @@ let serverTime = 0;
 const camTimeouts = {};
 const camStates = {};
 const activeStreams = {};
+const camErrorLogged = {};
 
 let activeFullscreenCam = null;
 
@@ -52,6 +53,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     console.log("JS LOADED");
     bindEvents();
     await initApp();
+
+    setTimeout(() => {
+        const switches = document.querySelectorAll(".switch input");
+
+        switches.forEach((sw, i) => {
+            if (!sw.checked) {
+                sw.checked = true;
+                toggleCam(i + 1, sw);
+            }
+        });
+    }, 500);
 });
 
 
@@ -633,12 +645,55 @@ async function toggleCam(id, el, fromSession = false) {
     const placeholder = box.querySelector(".camera-placeholder span");
     const camIndex = id - 1;
 
+    if (camTimeouts[id]) {
+        clearTimeout(camTimeouts[id]);
+        camTimeouts[id] = null;
+    }
+
     if (el.checked) {
         camStates[id] = "loading";
         placeholder.innerText = "CONNECTING...";
+        setCameraButtons(id, false);
+
         img.src = `/camera/${camIndex}?t=${Date.now()}`;
 
+        camTimeouts[id] = setTimeout(async () => {
+            if (camStates[id] !== "active") {
+                console.log(`[CAM] ${id} TIMEOUT`);
+
+                camStates[id] = "timeout";
+
+                el.checked = false;
+                img.src = "";
+                img.classList.remove("active");
+                box.classList.remove("active");
+
+                placeholder.innerText = "CAMERA NOT FOUND";
+                setCameraButtons(id, false);
+
+                try {
+                    await fetch(`/camera/${camIndex}/off`, {
+                        method: "POST"
+                    });
+                } catch (err) {
+                    console.error(err);
+                }
+
+                if (!fromSession) {
+                    await saveSession({
+                        camera: { [id]: false }
+                    });
+                }
+            }
+        }, 5000);
+
+
         img.onload = async () => {
+            if (camTimeouts[id]) {
+                clearTimeout(camTimeouts[id]);
+                camTimeouts[id] = null;
+            }
+
             camStates[id] = "active";
             box.classList.add("active");
             img.classList.add("active");
@@ -647,46 +702,72 @@ async function toggleCam(id, el, fromSession = false) {
 
             if (!fromSession) {
                 await saveSession({
-                    camera: {
-                        [id]: true
-                    }
+                    camera: { [id]: true }
                 });
             }
         };
 
-        img.onerror = () => {
+        img.onerror = async () => {
+            if (camErrorLogged[id]) return;
+            camErrorLogged[id] = true;
+
+            if (camTimeouts[id]) {
+                clearTimeout(camTimeouts[id]);
+                camTimeouts[id] = null;
+            }
+
             camStates[id] = "error";
+
+            el.checked = false;
+            img.src = "";
+            img.classList.remove("active");
+            box.classList.remove("active");
+
             placeholder.innerText = "CAMERA NOT FOUND";
             setCameraButtons(id, false);
-            el.checked = false;
-            img.classList.remove("active");
-            img.src = "";
+
+            await sendLog(`[CAM] CAMERA ${id} FAILED / NOT FOUND`);
+
+            try {
+                await fetch(`/camera/${camIndex}/off`, {
+                    method: "POST"
+                });
+            } catch (err) {
+                console.error(err);
+            }
+
+            if (!fromSession) {
+                await saveSession({
+                    camera: { [id]: false }
+                });
+            }
         };
 
     } else {
+        if (camTimeouts[id]) {
+            clearTimeout(camTimeouts[id]);
+            camTimeouts[id] = null;
+        }
+
         img.src = "";
         img.classList.remove("active");
         camStates[id] = "idle";
         box.classList.remove("active");
-        placeholder.innerText = "CAMERA OFFLINE";
 
+        placeholder.innerText = "CAMERA OFFLINE";
         setCameraButtons(id, false);
 
         try {
-            await fetch(
-                `/camera/${camIndex}/off`,
-                { method: "POST" }
-            );
-
+            await fetch(`/camera/${camIndex}/off`, {
+                method: "POST"
+            });
         } catch (err) {
             console.error(err);
         }
 
         if (!fromSession) {
             await saveSession({
-                camera: {
-                    [id]: false
-                }
+                camera: { [id]: false }
             });
         }
     }
