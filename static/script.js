@@ -3,57 +3,76 @@ let serverTime = 0;
 const camTimeouts = {};
 const camStates = {};
 const activeStreams = {};
+
 let activeFullscreenCam = null;
 
 let lastQR = null;
 let lastQRTime = 0;
 
 let ws = null;
+let reconnectTimeout = null;
 
 let DEPTH_CONFIG = {
     pool: 300,
     danger: 200,
-    setpoint: 0
+    setpoint: 150
 };
+
 let depthData = {
     depth: 0,
 };
 
 let TRAJ_CONFIG = {
-    x: 5000,
-    y: 5000
+    x: 500,
+    y: 500
 };
+
 let trajPath = [];
 
 let joystick = null;
-let currentMode = "AUTO";
-let modeCooldown = false;
 
+let currentMode = "KEYBOARD";
+let modeCooldown = false;
 
 let isRecording = false;
 let hasRecording = false;
 let replayPlaying = false;
 
-document.addEventListener("DOMContentLoaded", () => {
-    console.log("JS LOADED");
+let sessionLoaded = false;
 
-    loadConfig();
-    loadPorts();
+
+// INIT
+document.addEventListener("DOMContentLoaded", async () => {
+    console.log("JS LOADED");
+    bindEvents();
+    await initApp();
+});
+
+
+async function initApp() {
+    await loadConfig();
+    await loadSession();
+    await loadPorts();
+
     initWebSocket();
 
     initDepthCanvas();
-    updateDepthInfo();
     initTrajCanvas();
+
     initROVImage();
     initModeSystem();
     initJoystick();
 
-    setCameraButtons(1, false);
-    setCameraButtons(2, false);
-});
+    updateDepthInfo();
+    updateTrajInfo();
 
-// FULLSCREEN EVENTS
-document.addEventListener("DOMContentLoaded", () => {
+    sessionLoaded = true;
+}
+
+
+// BIND EVENTS
+function bindEvents() {
+    // FULLSCREEN
     const overlay = document.getElementById("fullscreenOverlay");
     const content = document.getElementById("fullscreenContent");
 
@@ -68,8 +87,6 @@ document.addEventListener("DOMContentLoaded", () => {
             closeFullscreenCam();
         }
     });
-
-
 
     // SERIAL
     document.getElementById("connectBtn").addEventListener("click", connectSerial);
@@ -98,13 +115,34 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("snapshotBtn").addEventListener("click", takeSnapshot);
     document.getElementById("resetSessionBtn").addEventListener("click", resetSession);
     document.getElementById("emergencyBtn").addEventListener("click", emergencyStop);
-});
+
+    // RECORD
+    document.getElementById("recordBtn").addEventListener("click", startRecording);
+    document.getElementById("stopRecordBtn").addEventListener("click", stopRecording);
+    document.getElementById("replayBtn").addEventListener("click", replayRecording);
+
+    // AUTO SNAPSHOT
+    document.getElementById("autoSnapshot").addEventListener("change", toggleAutoSnapshot);
+}
 
 
-// COOLDOWN BUTTON
+// HELPERS
+function getJSON(url) {
+    return fetch(url).then(r => r.json());
+}
+
+function postJSON(url, body = {}) {
+    return fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+    }).then(r => r.json());
+}
+
 function cooldownButton(btn, time = 1000) {
     if (!btn) return;
-
     btn.classList.add("cooldown");
     btn.disabled = true;
 
@@ -123,315 +161,478 @@ function isButtonLocked(btn) {
 
 
 // CONFIG
-function loadConfig() {
-    fetch("/config")
-        .then(res => res.json())
-        .then(cfg => {
+async function loadConfig() {
+    try {
+        const cfg = await getJSON("/config");
+        document.title = cfg.title_tag;
+        document.getElementById("univ").innerText = cfg.university;
+        document.getElementById("title").innerText = "◈   " + cfg.title + "   ◈";
+        document.getElementById("subtitle").innerText = cfg.subtitle;
+        document.getElementById("team").innerText = cfg.team;
 
-            document.title = cfg.title_tag;
+        DEPTH_CONFIG.pool = cfg.pool_depth;
+        DEPTH_CONFIG.danger = cfg.danger_depth;
+        DEPTH_CONFIG.setpoint = cfg.setpoint_depth;
 
-            document.getElementById("univ").innerText = cfg.university;
-            document.getElementById("title").innerText = "◈   " + cfg.title + "   ◈";
-            document.getElementById("subtitle").innerText = cfg.subtitle;
-            document.getElementById("team").innerText = cfg.team;
-
-            DEPTH_CONFIG.pool = cfg.pool_depth;
-            DEPTH_CONFIG.danger = cfg.danger_depth;
-            DEPTH_CONFIG.setpoint = cfg.setpoint_depth;
-
-            TRAJ_CONFIG.x = cfg.traj_x;
-            TRAJ_CONFIG.y = cfg.traj_y;
-
-            updateDepthInfo();
-            updateTrajInfo();
-        })
-        .catch(err => console.error("Config error:", err));
+        TRAJ_CONFIG.x = cfg.traj_x;
+        TRAJ_CONFIG.y = cfg.traj_y;
+    } catch (err) {
+        console.error("[CONFIG]", err);
+    }
 }
 
+
+// SESSION
+async function loadSession() {
+    try {
+        const state = await getJSON("/session");
+        applySession(state);
+        console.log("[SESSION] LOADED");
+    } catch (err) {
+        console.error("[SESSION] FAILED", err);
+    }
+}
+
+
+async function saveSession(data) {
+    try {
+        await postJSON("/session", data);
+    } catch (err) {
+        console.error("[SESSION SAVE]", err);
+    }
+}
+
+
+function applySession(state) {
+    if (!state) return;
+
+    // MODE
+    currentMode = state.mode || "KEYBOARD";
+    document.getElementById("mode").innerText = `● MODE: ${currentMode}`;
+
+    document.querySelectorAll(".mode-btn").forEach(btn => {
+            btn.classList.remove("active");
+
+            if (
+                btn.innerText.trim() === currentMode
+            ) {
+                btn.classList.add("active");
+            }
+        });
+
+
+    // SERIAL
+    if (state.serial) {
+        if (state.serial.connected) {
+            document.getElementById("status").innerText = `● SERIAL: ONLINE (${state.serial.port})`;
+        } else {
+            document.getElementById("status").innerText = "◌ SERIAL: OFFLINE";
+        }
+    }
+
+
+    // PID
+    if (state.pid) {
+        document.getElementById("kp").value = state.pid.kp;
+        document.getElementById("ki").value = state.pid.ki;
+        document.getElementById("kd").value = state.pid.kd;
+
+        const sliders = document.querySelectorAll(".pid-slider");
+
+        sliders[0].value = state.pid.kp;
+        sliders[1].value = state.pid.ki;
+        sliders[2].value = state.pid.kd;
+
+        document.getElementById("kp-last").innerText = `Last: ${state.pid.kp}`;
+        document.getElementById("ki-last").innerText = `Last: ${state.pid.ki}`;
+        document.getElementById("kd-last").innerText = `Last: ${state.pid.kd}`;
+    }
+
+
+    // TRAJECTORY
+    if (Array.isArray(state.trajectory)) {
+        trajPath = [...state.trajectory];
+    }
+
+
+    // QR
+    if (state.qr) {
+        const main = state.qr.main;
+        document.getElementById("qrMainSide").innerText = main.side;
+        document.getElementById("qrMainRaw").innerText = main.raw;
+        document.getElementById("qrMainTime").innerText = main.time;
+        const historyBox = document.getElementById("qrHistoryBox");
+
+        historyBox.innerHTML = "";
+
+        if (Array.isArray(state.qr.history)) {
+            state.qr.history.forEach(item => {
+                const div = document.createElement("div");
+
+                div.classList.add("qr-item");
+
+                div.innerHTML = `
+                    <span class="qr-time">
+                        ${item.time || "--"}
+                    </span>
+
+                    <span class="qr-sep">
+                        -
+                    </span>
+
+                    <span class="qr-text">
+                        ${item.side || "--"}
+                    </span>
+                `;
+
+                historyBox.appendChild(div);
+            });
+        }
+    }
+
+
+    // LOGS
+    if (Array.isArray(state.logs)) {
+        const box = document.getElementById("logBox");
+        box.innerHTML = "";
+
+        state.logs.forEach(log => {
+            addLog(log);
+        });
+    }
+
+
+    // RECORD
+    if (state.record) {
+        isRecording = state.record.isRecording;
+        hasRecording = state.record.hasRecording;
+        replayPlaying = state.record.replayPlaying;
+
+        syncRecordUI();
+    }
+
+
+    // ADVANCED
+    if (state.advanced) {
+        document.getElementById("autoSnapshot").checked = !!state.advanced.autoSnapshot;
+        const emergencyBtn = document.getElementById("emergencyBtn");
+
+        if (state.advanced.emergency) {
+            emergencyBtn.classList.add("active");
+        } else {
+            emergencyBtn.classList.remove("active");
+        }
+    }
+
+
+    // CAMERA
+    if (state.camera) {
+        if (state.camera["1"]) {
+            const sw = document.querySelectorAll(".switch input")[0];
+
+            sw.checked = true;
+            toggleCam(1, sw, true);
+        }
+
+        if (state.camera["2"]) {
+            const sw =document.querySelectorAll(".switch input")[1];
+
+            sw.checked = true;
+            toggleCam(2, sw, true);
+        }
+    }
+}
 
 
 // WEBSOCKET
 function initWebSocket() {
-    ws = new WebSocket("ws://localhost:8000/ws");
+    const protocol = location.protocol === "https:"? "wss": "ws";
 
-    ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        const data = msg.telemetry;
-
-        if (msg.timestamp) {
-            serverTime = msg.timestamp * 1000;
-        }
-
-        document.getElementById("datetime").innerText = msg.datetime;
-
-        if (msg.qr) {
-            updateQRSystem(msg.qr);
-        }
-
-        // TELEMETRY
-        document.getElementById("t_setpoint").innerText = "SETPOINT: " + DEPTH_CONFIG.setpoint;
-        document.getElementById("t_height").innerText = "HEIGHT: " + data.depth;
-        document.getElementById("t_heading").innerText = "HEADING: " + data.heading;
-        document.getElementById("t_pressure").innerText = "PRESSURE: " + data.pressure;
-
-        data.pwm.forEach((val, i) => {
-            document.getElementById(`t_pwm${i+1}`).innerText = `PWM${i+1}: ${val}`;
-        });
-
-        // DEPTH
-        depthData.depth = data.depth;
-        updateDepthInfo();
-
-        if (msg.trajectory) {
-            trajPath.push(msg.trajectory);
-
-            if (trajPath.length > 500) {
-                trajPath.shift();
-            }
-        }
-        
-        document.getElementById("status").innerText = "● SERIAL: ONLINE";
-
-        if (msg.log) {
-            addLog(msg.log);
-        }
-    };
+    ws = new WebSocket(`${protocol}://${location.host}/ws`);
+    ws.onopen = () => {console.log("[WS] CONNECTED");};
+    ws.onmessage = (event) => {const msg = JSON.parse(event.data);handleTelemetry(msg);};
 
     ws.onclose = () => {
-        document.getElementById("status").innerText = "◌ SERIAL: OFFLINE";
+        console.log("[WS] CLOSED");
+
+        setTimeout(() => {
+            initWebSocket();
+        }, 2000);
+    };
+
+    ws.onerror = (err) => {
+        console.error("[WS ERROR]", err);
+        ws.close();
     };
 }
 
-function sendLogToBackend(text) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: "log",
-            message: text
-        }));
-    } else {
-        console.log("WS belum connect");
+
+function handleTelemetry(msg) {
+    if (!msg) return;
+
+    if (msg.timestamp) {
+        serverTime = msg.timestamp * 1000;
+    }
+
+    if (msg.datetime) {
+        document.getElementById("datetime").innerText = msg.datetime;
+    }
+
+    if (msg.telemetry) {
+        const data = msg.telemetry;
+
+        document.getElementById("t_setpoint").innerText = `SETPOINT: ${DEPTH_CONFIG.setpoint}`;
+        document.getElementById("t_height").innerText = `HEIGHT: ${data.depth}`;
+        document.getElementById("t_heading").innerText = `HEADING: ${data.heading}`;
+        document.getElementById("t_pressure").innerText = `PRESSURE: ${data.pressure}`;
+
+        if (Array.isArray(data.pwm)) {
+
+            data.pwm.forEach((val, i) => {
+                const el = document.getElementById(`t_pwm${i + 1}`);
+
+                if (el) {
+                    el.innerText = `PWM${i + 1}: ${val}`;
+                }
+            });
+        }
+
+        depthData.depth = data.depth;
+        updateDepthInfo();
+    }
+
+    if (msg.trajectory) {
+        trajPath.push(msg.trajectory);
+        if (trajPath.length > 500) {
+            trajPath.shift();
+        }
+    }
+
+    if (msg.session) {
+        updateSessionRealtime(msg.session);
+    }
+}
+
+
+function updateSessionRealtime(state) {
+    if (!state) return;
+
+    // SERIAL STATUS
+    if (state.serial) {
+        if (state.serial.connected) {
+            document.getElementById("status")
+                .innerText =
+                `● SERIAL: ONLINE (${state.serial.port})`;
+
+        } else {
+            document.getElementById("status")
+                .innerText =
+                "◌ SERIAL: OFFLINE";
+        }
+    }
+
+    // RECORD
+    if (state.record) {
+        isRecording = state.record.isRecording;
+        hasRecording = state.record.hasRecording;
+        replayPlaying = state.record.replayPlaying;
+
+        syncRecordUI();
+    }
+
+    // QR
+    if (state.qr) {
+        document.getElementById("qrMainSide")
+            .innerText =
+            state.qr.main.side;
+
+        document.getElementById("qrMainRaw")
+            .innerText =
+            state.qr.main.raw;
+
+        document.getElementById("qrMainTime")
+            .innerText =
+            state.qr.main.time;
     }
 }
 
 
 // SERIAL
-function loadPorts() {
-    fetch("/serial/ports")
-        .then(res => res.json())
-        .then(data => {
-            const select = document.querySelector(".port-select");
-            select.innerHTML = "";
+async function loadPorts() {
+    try {
+        const data = await getJSON("/serial/ports");
+        const select = document.querySelector(".port-select");
 
-            if (data.ports.length === 0) {
-                const opt = document.createElement("option");
-                opt.text = "NO DEVICE";
-                select.appendChild(opt);
+        select.innerHTML = "";
 
-                updateSerialButtons();
-                return;
-            }
+        if (
+            !data.ports || data.ports.length === 0
+        ) {
+            const opt =document.createElement("option");
 
-            data.ports.forEach(p => {
-                const opt = document.createElement("option");
-                opt.value = p;
-                opt.text = p;
-                select.appendChild(opt);
-            });
+            opt.text = "NO DEVICE";
+            select.appendChild(opt);
 
             updateSerialButtons();
+            return;
+        }
+
+        data.ports.forEach(port => {
+            const opt = document.createElement("option");
+
+            opt.value = port;
+            opt.text = port;
+
+            select.appendChild(opt);
         });
+        updateSerialButtons();
+    } catch (err) {
+        console.error("[PORTS]", err);
+    }
 }
 
-function connectSerial() {
-    const btn = document.querySelector(".connect-btn");
+
+async function connectSerial() {
+    const btn = document.getElementById("connectBtn");
 
     if (isButtonLocked(btn)) return;
     cooldownButton(btn, 1000);
 
     const port = document.querySelector(".port-select").value;
 
-    fetch("/serial/connect", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({port})
-    })
-    .then(res => res.json())
-    .then(res => {
+    if (
+        !port || port === "NO DEVICE"
+    ) {
+        return;
+    }
+
+    try {
+        const res = await postJSON("/serial/connect", { port });
+
         if (res.success) {
-            console.log("[SERIAL] CONNECT SUCCESS");
+            addLog(`[SERIAL] CONNECTED ${port}`);
         } else {
-            console.log("[SERIAL] CONNECT FAILED");
+            addLog(`[SERIAL] FAILED`);
         }
-    });
+
+    } catch (err) {
+        console.error(err);
+    }
 }
 
-function disconnectSerial() {
-    const btn = document.querySelector(".stop-btn");
+
+async function disconnectSerial() {
+    const btn = document.getElementById("disconnectBtn");
 
     if (isButtonLocked(btn)) return;
     cooldownButton(btn, 1000);
 
-    fetch("/serial/disconnect", {method: "POST"})
-    .then(() => {
-        console.log("[SERIAL] DISCONNECT");
-    });
+    try {
+        await fetch("/serial/disconnect", {
+            method: "POST"
+        });
+        addLog("[SERIAL] DISCONNECTED");
+    } catch (err) {
+        console.error(err);
+    }
 }
 
-function refreshPorts() {
-    const btn = document.querySelector(".refresh-btn");
+
+async function refreshPorts() {
+    const btn = document.getElementById("refreshPortsBtn");
 
     if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 1000);
 
-    loadPorts();
-    console.log("[SERIAL] REFRESH PORT");
+    cooldownButton(btn, 1000);
+    await loadPorts();
 }
+
 
 function updateSerialButtons() {
     const select = document.querySelector(".port-select");
-    const connectBtn = document.querySelector(".connect-btn");
-    const stopBtn = document.querySelector(".stop-btn");
-
-    const value = select.value;
-
-    const noDevice = !value || value === "NO DEVICE";
+    const connectBtn = document.getElementById("connectBtn");
+    const stopBtn = document.getElementById("disconnectBtn");
+    const noDevice = !select.value || select.value === "NO DEVICE";
 
     connectBtn.disabled = noDevice;
     stopBtn.disabled = noDevice;
 }
 
 
-
-
-// CAMERA CONTROL
+// CAMERA
 function setCameraButtons(id, enabled) {
     const card = document.querySelectorAll(".camera-card")[id - 1];
     if (!card) return;
 
     const captureBtn = card.querySelector(".capture");
     const fullscreenBtn = card.querySelector(".fullscreen-btn");
+
     captureBtn.disabled = !enabled;
     fullscreenBtn.disabled = !enabled;
 }
 
-function toggleCam(id, el) {
+
+async function toggleCam(id, el, fromSession = false) {
     const img = document.getElementById("cam" + id);
     const box = img.closest(".camera-box");
     const placeholder = box.querySelector(".camera-placeholder span");
-
-    if (!img || !box) return;
-
     const camIndex = id - 1;
 
-    if (!camStates[id]) {
-        camStates[id] = "idle";
-    }
-
-    if (camStates[id] === "loading") {
-        console.log(`Camera ${id} still loading`);
-        el.checked = true;
-        return;
-    }
-
-    if (camTimeouts[id]) {
-        clearTimeout(camTimeouts[id]);
-        camTimeouts[id] = null;
-    }
-
-    img.onload = null;
-    img.onerror = null;
-    img.dataset.errorHandled = "false";
-
-    el.disabled = true;
-    setTimeout(() => el.disabled = false, 500);
-
     if (el.checked) {
-        if (camStates[id] === "active") {
-            console.log(`Camera ${id} already active`);
-            return;
-        }
-
         camStates[id] = "loading";
-
-        setCameraButtons(id, false);
-        img.dataset.state = "loading";
-
         placeholder.innerText = "CONNECTING...";
-        box.classList.remove("active");
 
-        if (activeStreams[id]) {
-            activeStreams[id].src = "";
-            activeStreams[id] = null;
-        }
+        img.src = `/camera/${camIndex}?t=${Date.now()}`;
+        img.onload = async () => {
 
-        img.src = "";
-        void img.offsetWidth;
-        img.src = `/camera/${camIndex}`;
-        activeStreams[id] = img;
-
-        img.classList.add("active");
-
-        camTimeouts[id] = setTimeout(() => {
-            if (camStates[id] !== "active") {
-                console.log(`Camera ${id} timeout`);
-                camStates[id] = "error";
-                setCameraButtons(id, false);
-
-                img.src = "";
-                img.classList.remove("active");
-                placeholder.innerText = "CAMERA NOT FOUND";
-                box.classList.remove("active");
-
-                el.checked = false;
-            }
-        }, 10000);
-
-        img.onload = () => {
             camStates[id] = "active";
-
-            setCameraButtons(id, true);
-            sendLogToBackend(`[CAM] Camera ${id} ONLINE`);
-
-            clearTimeout(camTimeouts[id]);
-            camTimeouts[id] = null;
-
             box.classList.add("active");
+            setCameraButtons(id, true);
+            placeholder.innerText = "";
+
+            if (!fromSession) {
+                await saveSession({
+                    camera: {
+                        [id]: true
+                    }
+                });
+            }
         };
 
         img.onerror = () => {
-            if (img.dataset.errorHandled === "true") return;
-
-            img.dataset.errorHandled = "true";
             camStates[id] = "error";
+            placeholder.innerText = "CAMERA NOT FOUND";
 
             setCameraButtons(id, false);
-            sendLogToBackend(`[CAM] Camera ${id} FAILED`);
-
-            clearTimeout(camTimeouts[id]);
-            camTimeouts[id] = null;
-
-            img.src = "";
-            img.classList.remove("active");
             el.checked = false;
-
-            placeholder.innerText = "CAMERA NOT FOUND";
-            box.classList.remove("active");
+            img.src = "";
         };
 
-    }
-
-    else {
-
+    } else {
+        img.src = "";
         camStates[id] = "idle";
+        box.classList.remove("active");
+        placeholder.innerText = "CAMERA OFFLINE";
+
         setCameraButtons(id, false);
 
-        img.src = "";
-        img.classList.remove("active");
+        try {
+            await fetch(
+                `/camera/${camIndex}/off`,
+                { method: "POST" }
+            );
 
-        placeholder.innerText = "CAMERA OFFLINE";
-        box.classList.remove("active");
+        } catch (err) {
+            console.error(err);
+        }
 
-        sendLogToBackend(`[CAM] Camera ${id} OFFLINE`);
+        if (!fromSession) {
+            await saveSession({
+                camera: {
+                    [id]: false
+                }
+            });
+        }
     }
 }
 
@@ -440,41 +641,43 @@ async function captureCam(id) {
     const btn = document.querySelectorAll(".capture")[id - 1];
 
     if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 500);
+    cooldownButton(btn, 700);
 
     try {
-        btn.disabled = true;
-        const response = await fetch(`/capture/${id - 1}`, {
-            method: "POST"
-        });
+        const res =
+            await fetch(
+                `/capture/${id - 1}`,
+                {
+                    method: "POST"
+                }
+            );
 
-        const result = await response.json();
-        if (!result.success) {
-            sendLogToBackend(`[CAPTURE] FAILED CAM ${id}`);
-            return;
+        const result = await res.json();
+
+        if (result.success) {
+            addLog(`[CAPTURE] CAM ${id}`);
+
+        } else {
+            addLog(`[CAPTURE] FAILED CAM ${id}`);
         }
-    }
 
-    catch (err) {
+    } catch (err) {
         console.error(err);
-        sendLogToBackend(`[CAPTURE] ERROR CAM ${id}`);
     }
 }
 
-function openFullscreenCam(id) {
-    const sourceImg = document.getElementById("cam" + id);
 
-    // CAMERA OFF
-    if (!sourceImg || !sourceImg.src) {
-        return;
-    }
+function openFullscreenCam(id) {
+    const source = document.getElementById("cam" + id);
+    if (!source.src) return;
 
     const overlay = document.getElementById("fullscreenOverlay");
-    const fullscreenImg = document.getElementById("fullscreenImage");
+    const fullscreenImage = document.getElementById("fullscreenImage");
+    const fullscreenTitle = document.getElementById("fullscreenTitle");
 
-    fullscreenImg.src = sourceImg.src; // COPY STREAM
-
-    // SHOW POPUP
+    fullscreenImage.src = source.src;
+    fullscreenTitle.innerText =`CAMERA ${id} FULLSCREEN`;
+    
     overlay.classList.add("active");
     activeFullscreenCam = id;
     document.body.style.overflow = "hidden";
@@ -482,77 +685,20 @@ function openFullscreenCam(id) {
 
 
 function closeFullscreenCam() {
-    const overlay = document.getElementById("fullscreenOverlay");
-    overlay.classList.remove("active");
-    activeFullscreenCam = null;
+    document.getElementById("fullscreenOverlay").classList.remove("active");
     document.body.style.overflow = "";
+    activeFullscreenCam = null;
 }
 
 
-function updateQRSystem(qrData) {
-    if (!qrData) return;
-
-    const now = serverTime;
-    const text = `${qrData.side} | ${qrData.raw}`;
-    const MAX_HISTORY = 20;
-    
-    const nowDate = new Date(serverTime);
-    const hh = String(nowDate.getHours()).padStart(2, '0');
-    const mm = String(nowDate.getMinutes()).padStart(2, '0');
-    const ss = String(nowDate.getSeconds()).padStart(2, '0');
-    const time2 = `${mm}:${ss}`;
-    const timeStr = `${hh}:${mm}:${ss}`;
-
-    const historyBox = document.getElementById("qrHistoryBox");
-    const item = document.createElement("div");
-    item.classList.add("qr-item");
-
-    if (text === lastQR) {
-        item.classList.add("same");
-    } else {
-        item.classList.add("new");
-    }
-
-    item.innerHTML = `
-        <span class="qr-time">${time2}</span>
-        <span class="qr-sep">-</span>
-        <span class="qr-text">${qrData.side}</span>
-    `;
-
-    historyBox.prepend(item);
-    historyBox.scrollLeft = 0;
-    historyBox.scrollTop = historyBox.scrollHeight;
-    
-    while (historyBox.children.length > MAX_HISTORY) {
-        historyBox.removeChild(historyBox.lastChild);
-    }
-
-    // ===== MAIN LOGIC =====
-    const isFirst = !lastQR;
-    const isDifferent = text !== lastQR;
-    const isTimeout = (now - lastQRTime) > 120000;
-
-    if (isFirst || isDifferent || isTimeout) {
-
-        document.getElementById("qrMainSide").innerText = "SISI - " + qrData.side;
-        document.getElementById("qrMainRaw").innerText = qrData.raw;
-        document.getElementById("qrMainTime").innerText = "Updated: " + timeStr;
-
-        lastQR = text;
-        lastQRTime = now;
-    }
-}
-
+// QR
 function clearQRHistory() {
     const btn = document.getElementById("clearQRBtn");
-
     if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 400);
 
+    cooldownButton(btn, 400);
     document.getElementById("qrHistoryBox").innerHTML = "";
 }
-
-
 
 
 // DEPTH
@@ -561,201 +707,171 @@ function initDepthCanvas() {
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
-
     function resize() {
         const rect = canvas.getBoundingClientRect();
+
         canvas.width = rect.width;
         canvas.height = rect.height;
     }
 
-    window.addEventListener("resize", resize);
     resize();
+
+    window.addEventListener(
+        "resize",
+        resize
+    );
 
     function draw() {
         const w = canvas.width;
         const h = canvas.height;
 
         ctx.clearRect(0, 0, w, h);
-
-        const pool = DEPTH_CONFIG.pool;
-        const danger = DEPTH_CONFIG.danger;
-
-        const depth = depthData.depth;
-        const sp = DEPTH_CONFIG.setpoint;
-
-        // bg
         ctx.fillStyle = "#020617";
         ctx.fillRect(0, 0, w, h);
 
-        ctx.strokeStyle = "#1f2937";
-        ctx.strokeRect(0, 0, w, h);
-
-        // depthline
+        const depth = depthData.depth;
+        const pool = DEPTH_CONFIG.pool;
+        const danger = DEPTH_CONFIG.danger;
+        const setpoint = DEPTH_CONFIG.setpoint;
         const depthY = (depth / pool) * h;
+        const dangerY = (danger / pool) * h;
+        const spY = (setpoint / pool) * h;
 
+        // DEPTH
         ctx.strokeStyle = "#38bdf8";
-        ctx.setLineDash([]);
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(0, depthY);
         ctx.lineTo(w, depthY);
         ctx.stroke();
 
-        // setdanger
-        const dangerY = (danger / pool) * h;
-
+        // DANGER
         ctx.strokeStyle = "red";
-        ctx.setLineDash([4, 4]);
+        ctx.setLineDash([5, 5]);
         ctx.beginPath();
         ctx.moveTo(0, dangerY);
         ctx.lineTo(w, dangerY);
         ctx.stroke();
 
-        // setpoint
-        const spY = (sp / pool) * h;
-
+        // SETPOINT
         ctx.strokeStyle = "#22c55e";
         ctx.setLineDash([]);
         ctx.beginPath();
         ctx.moveTo(0, spY);
         ctx.lineTo(w, spY);
         ctx.stroke();
-
-        // scale
-        ctx.fillStyle = "#94a3b8";
-        ctx.font = "10px Poppins";
-
-        const step = pool / 5;
-
-        for (let i = 0; i <= pool; i += step) {
-            const y = (i / pool) * h;
-
-            ctx.beginPath();
-            ctx.moveTo(w - 8, y);
-            ctx.lineTo(w, y);
-            ctx.strokeStyle = "#64748b";
-            ctx.stroke();
-
-            ctx.fillText(i.toFixed(0), 2, y - 2);
-        }
     }
 
     setInterval(draw, 100);
 }
 
+
 function updateDepthInfo() {
-    const H = DEPTH_CONFIG.pool;
-    const depth = depthData.depth;
-    const sp = DEPTH_CONFIG.setpoint;
     const box = document.querySelector(".depth-info-bottom");
+    if (!box) return;
+    const depth = depthData.depth;
 
-    box.querySelector(".d-num").innerText = depth;
-    box.querySelector(".h-num").innerText = H;
-    box.querySelector(".sp-num").innerText = sp;
+    box.querySelector(".d-num")
+        .innerText = depth;
 
-    const dangerEl = box.querySelector(".danger-text");
+    box.querySelector(".h-num")
+        .innerText =
+        DEPTH_CONFIG.pool;
+
+    box.querySelector(".sp-num")
+        .innerText =
+        DEPTH_CONFIG.setpoint;
+
     const card = document.querySelector(".depth-card");
+    const dangerText = box.querySelector(".danger-text");
     const dNum = box.querySelector(".d-num");
 
-    if (depth >= DEPTH_CONFIG.danger) {
-        dangerEl.style.opacity = "1";
+    if (
+        depth >= DEPTH_CONFIG.danger
+    ) {
         card.classList.add("danger");
+        dangerText.style.opacity = "1";
         dNum.classList.add("danger");
+
     } else {
-        dangerEl.style.opacity = "0";
         card.classList.remove("danger");
+        dangerText.style.opacity = "0";
         dNum.classList.remove("danger");
     }
 }
 
 
-
-// Trajectory
+// TRAJECTORY
 function initTrajCanvas() {
     const canvas = document.getElementById("trajCanvas");
     const ctx = canvas.getContext("2d");
 
     function resizeCanvas() {
         const parent = canvas.parentElement;
-
-        const maxW = parent.clientWidth;
-        const maxH = parent.clientHeight;
-
-        const ratio = TRAJ_CONFIG.x / TRAJ_CONFIG.y;
-
-        let width = maxW;
-        let height = width / ratio;
-
-        if (height > maxH) {
-            height = maxH;
-            width = height * ratio;
-        }
-
-        canvas.style.width = width + "px";
-        canvas.style.height = height + "px";
-
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = parent.clientWidth;
+        canvas.height = parent.clientHeight;
     }
 
     function cmToPx(x, y) {
-        const px = (x / TRAJ_CONFIG.x) * canvas.width;
-        const py = (y / TRAJ_CONFIG.y) * canvas.height;
+        return {
+            x:
+                (x / TRAJ_CONFIG.x)
+                * canvas.width,
 
-        return { x: px, y: py };
+            y:
+                (y / TRAJ_CONFIG.y)
+                * canvas.height
+        };
     }
 
     function drawGrid() {
-        const meterX = TRAJ_CONFIG.x / 100;
-        const meterY = TRAJ_CONFIG.y / 100;
-
-        let gridStep = 1;
-
-        const maxMeter = Math.max(meterX, meterY);
-        if (maxMeter <= 5) gridStep = 0.5;
-        else if (maxMeter <= 10) gridStep = 1;
-        else if (maxMeter <= 20) gridStep = 2;
-        else if (maxMeter <= 50) gridStep = 5;
-        else gridStep = 10;
-
-        const pxPerMeterX = canvas.width / meterX;
-        const pxPerMeterY = canvas.height / meterY;
-
         ctx.strokeStyle = "#1f2937";
-        ctx.lineWidth = 1;
 
-        for (let x = 0; x <= meterX; x += gridStep) {
-            const px = x * pxPerMeterX;
+        for (
+            let x = 0;
+            x < canvas.width;
+            x += 40
+        ) {
             ctx.beginPath();
-            ctx.moveTo(px, 0);
-            ctx.lineTo(px, canvas.height);
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
             ctx.stroke();
         }
 
-        for (let y = 0; y <= meterY; y += gridStep) {
-            const py = y * pxPerMeterY;
+        for (
+            let y = 0;
+            y < canvas.height;
+            y += 40
+        ) {
             ctx.beginPath();
-            ctx.moveTo(0, py);
-            ctx.lineTo(canvas.width, py);
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
             ctx.stroke();
         }
     }
 
     function drawPath() {
         if (trajPath.length < 2) return;
-
         ctx.beginPath();
 
         trajPath.forEach((p, i) => {
             const pos = cmToPx(p.x, p.y);
 
             if (i === 0) {
-                ctx.moveTo(pos.x, pos.y);
+                ctx.moveTo(
+                    pos.x,
+                    pos.y
+                );
+
             } else {
-                ctx.lineTo(pos.x, pos.y);
+                ctx.lineTo(
+                    pos.x,
+                    pos.y
+                );
             }
         });
 
-        ctx.strokeStyle = "#22c55e"; // hijau
+        ctx.strokeStyle = "#22c55e";
         ctx.lineWidth = 2;
         ctx.stroke();
     }
@@ -767,20 +883,26 @@ function initTrajCanvas() {
         const pos = cmToPx(last.x, last.y);
 
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+        ctx.arc(
+            pos.x,
+            pos.y,
+            6,
+            0,
+            Math.PI * 2
+        );
 
         ctx.fillStyle = "#ef4444";
         ctx.fill();
-
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
-        ctx.stroke();
     }
 
     function render() {
         resizeCanvas();
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
 
         drawGrid();
         drawPath();
@@ -788,183 +910,176 @@ function initTrajCanvas() {
 
         requestAnimationFrame(render);
     }
-
     render();
 }
 
+
 function updateTrajInfo() {
-    const meterX = (TRAJ_CONFIG.x / 100).toFixed(1);
-    const meterY = (TRAJ_CONFIG.y / 100).toFixed(1);
+    const x =(TRAJ_CONFIG.x / 100);
+    const y =(TRAJ_CONFIG.y / 100);
 
-    const cleanX = meterX.endsWith(".0") ? parseInt(meterX) : meterX;
-    const cleanY = meterY.endsWith(".0") ? parseInt(meterY) : meterY;
-
-    document.getElementById("trajInfo").innerText =
-        `${cleanX} x ${cleanY} meter`;
+    document.getElementById("trajInfo")
+        .innerText =
+        `${x} x ${y} meter`;
 }
 
 
-// ROV IMAGE HANDLER
+// ROV
 function initROVImage() {
-    const rovImg = document.getElementById("rov-img");
-    const rovText = document.getElementById("rov-placeholder");
+    const img = document.getElementById("rov-img");
+    const placeholder = document.getElementById("rov-placeholder");
 
-    if (!rovImg || !rovText) {
-        console.error("Element ROV tidak ditemukan");
-        return;
-    }
+    img.onload = () => {
+        img.style.display = "block";
+        placeholder.style.display = "none";
+    };
 
-    // console.log("Cek gambar:", rovImg.src);
-
-    rovImg.style.display = "none";
-    rovText.style.display = "block";
-
-    function showImage() {
-        rovImg.style.display = "block";
-        rovText.style.display = "none";
-    }
-
-    function showPlaceholder() {
-        rovImg.style.display = "none";
-        rovText.style.display = "block";
-    }
-
-    if (rovImg.complete) {
-        if (rovImg.naturalWidth !== 0) {
-            showImage();
-        } else {
-            showPlaceholder();
-        }
-    }
-
-    rovImg.onload = showImage;
-    rovImg.onerror = showPlaceholder;
+    img.onerror = () => {
+        img.style.display = "none";
+        placeholder.style.display = "block";
+    };
 }
 
 
-
-// OPERATIONS
+// MODE
 function initModeSystem() {
     const modeButtons = document.querySelectorAll(".mode-btn");
     const modeText = document.getElementById("mode");
 
     modeButtons.forEach(btn => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener(
+            "click",
+            async () => {
+                if (modeCooldown) return;
+                const selected = btn.innerText.trim();
 
-            if (modeCooldown) return;
-            const selectedMode = btn.innerText.trim();
-            if (selectedMode === currentMode) return;
+                if (
+                    selected === currentMode
+                ) return;
 
-            modeCooldown = true;
-            modeButtons.forEach(b => {
-                cooldownButton(b, 1000);
-            });
+                modeCooldown = true;
 
-            modeButtons.forEach(b => {
-                b.classList.remove("active");
-            });
+                modeButtons.forEach(b => {
+                    b.classList.remove(
+                        "active"
+                    );
+                });
 
-            btn.classList.add("active");
-            currentMode = selectedMode;
-            modeText.innerText = `● MODE: ${currentMode}`;
-            sendLogToBackend(`[MODE] ${currentMode}`);
+                btn.classList.add("active");
+                currentMode = selected;
+                modeText.innerText = `● MODE: ${selected}`;
 
-            setTimeout(() => {
-                modeCooldown = false;
-            }, 1000);
-        });
+                await saveSession({
+                    mode: selected
+                });
 
+                setTimeout(() => {
+                    modeCooldown = false;
+                }, 700);
+            }
+        );
     });
-
 }
+
 
 // JOYSTICK
 function initJoystick() {
-    const statusEl = document.getElementById("joystickStatus");
-    window.addEventListener("gamepadconnected", (e) => {
-        joystick = e.gamepad;
-        console.log("Joystick connected:", joystick);
-        statusEl.innerText = `● JOYSTICK CONNECTED : ${joystick.id}`;
+    const statusEl =
+        document.getElementById(
+            "joystickStatus"
+        );
 
-        statusEl.classList.add("active");
-        addLog(`[JOY] Connected : ${joystick.id}`);
-        pollJoystick();
-    });
+    window.addEventListener(
+        "gamepadconnected",
+        (e) => {
+            joystick = e.gamepad;
+            statusEl.innerText = `● JOYSTICK CONNECTED : ${joystick.id}`;
+            statusEl.classList.add("active");
 
-    window.addEventListener("gamepaddisconnected", () => {
-        joystick = null;
-        statusEl.innerText = "● JOYSTICK DISCONNECTED";
-        statusEl.classList.remove("active");
-        addLog("[JOY] Disconnected");
-    });
+            addLog(`[JOY] CONNECTED ${joystick.id}`);
+            pollJoystick();
+        }
+    );
+
+    window.addEventListener(
+        "gamepaddisconnected",
+        () => {
+            joystick = null;
+            statusEl.innerText = "◌ JOYSTICK DISCONNECTED";
+            statusEl.classList.remove("active");
+
+            addLog("[JOY] DISCONNECTED");
+        }
+    );
 }
+
 
 function pollJoystick() {
     function update() {
         if (!joystick) return;
-
-        const gamepads = navigator.getGamepads();
-        const gp = gamepads[joystick.index];
-
-        if (!gp) {
-            requestAnimationFrame(update);
-            return;
-        }
-
-        // ANALOG
-        const lx = gp.axes[0].toFixed(2);
-        const ly = gp.axes[1].toFixed(2);
-
-        const rx = gp.axes[2].toFixed(2);
-        const ry = gp.axes[3].toFixed(2);
-
-        const btnA = gp.buttons[0].pressed;
-        const btnB = gp.buttons[1].pressed;
-
         requestAnimationFrame(update);
     }
-
     update();
 }
 
 
 // PID
-function sendPID() {
+async function sendPID() {
     const btn = document.getElementById("applyPidBtn");
-
     if (isButtonLocked(btn)) return;
     cooldownButton(btn, 1000);
 
-    const kp = parseFloat(document.getElementById("kp").value).toFixed(4);
-    const ki = parseFloat(document.getElementById("ki").value).toFixed(4);
-    const kd = parseFloat(document.getElementById("kd").value).toFixed(4);
+    const kp = parseFloat(document.getElementById("kp").value);
+    const ki = parseFloat(document.getElementById("ki").value);
+    const kd = parseFloat(document.getElementById("kd").value);
 
-    sendLogToBackend(
-        `[PID] Kp=${kp} Ki=${ki} Kd=${kd}`
-    );
+    document.getElementById("kp-last").innerText = `Last: ${kp}`;
+    document.getElementById("ki-last").innerText = `Last: ${ki}`;
+    document.getElementById("kd-last").innerText = `Last: ${kd}`;
+
+    await saveSession({
+        pid: {
+            kp,
+            ki,
+            kd
+        }
+    });
+
+    addLog(`[PID] Kp=${kp} Ki=${ki} Kd=${kd}`);
 }
+
 
 function syncPID(slider, id) {
-    const value = parseFloat(slider.value).toFixed(4);
-    document.getElementById(id).value = value;
+    document.getElementById(id).value = parseFloat(slider.value).toFixed(4);
 }
 
-function resetPID() {
+
+async function resetPID() {
     const btn = document.getElementById("resetPidBtn");
 
     if (isButtonLocked(btn)) return;
     cooldownButton(btn, 1000);
 
-    ["kp", "ki", "kd"].forEach(id => {
-        document.getElementById(id).value = "0.0000";
-    });
+    ["kp", "ki", "kd"]
+        .forEach(id => {
+            document.getElementById(id)
+                .value = "0.0000";
+        });
 
     document.querySelectorAll(".pid-slider")
         .forEach(slider => {
             slider.value = "0.0000";
         });
 
-    sendLogToBackend("[PID] Reset");
+    await saveSession({
+        pid: {
+            kp: 0,
+            ki: 0,
+            kd: 0
+        }
+    });
+
+    addLog("[PID] RESET");
 }
 
 
@@ -972,154 +1087,231 @@ function resetPID() {
 function addLog(text) {
     const box = document.getElementById("logBox");
     const line = document.createElement("div");
-    
+
     line.innerText = text;
     box.appendChild(line);
     box.scrollTop = box.scrollHeight;
 }
 
+
 function clearLog() {
     const btn = document.getElementById("clearLogBtn");
-
-    if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 400);
-
-    document.getElementById("logBox").innerHTML = "";
-    sendLogToBackend("[INFO] Clear Done");
-}
-
-function copyLog() {
-    const btn = document.getElementById("copyLogBtn");
-
-    if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 400);
-
-    navigator.clipboard.writeText(
-        document.getElementById("logBox").innerText
-    );
-
-    sendLogToBackend("[INFO] Log Copied");
-}
-
-function fakeLog() {
-    const btn = document.getElementById("testLogBtn");
-
     if (isButtonLocked(btn)) return;
     cooldownButton(btn, 500);
 
-    sendLogToBackend(
-        "[INFO] IMU OK | DEPTH 1.23m | PWM UPDATED"
+    document.getElementById("logBox").innerHTML = "";
+}
+
+
+function copyLog() {
+    const btn = document.getElementById("copyLogBtn");
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 500);
+
+    navigator.clipboard.writeText(
+        document.getElementById("logBox")
+            .innerText
     );
 }
 
 
+function fakeLog() {
+    const btn = document.getElementById("testLogBtn");
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 500);
 
-// ================= RECORD SYSTEM =================
-const recordBtn = document.getElementById("recordBtn");
-const stopRecordBtn = document.getElementById("stopRecordBtn");
-const replayBtn = document.getElementById("replayBtn");
-
-recordBtn.addEventListener("click", startRecording);
-stopRecordBtn.addEventListener("click", stopRecording);
-replayBtn.addEventListener("click", replayRecording);
-
-function startRecording() {
-    if (isRecording) return;
-    if (isButtonLocked(recordBtn)) return;
-    cooldownButton(recordBtn, 1000);
-
-    isRecording = true;
-
-    recordBtn.classList.add("recording");
-    recordBtn.innerHTML = `
-        <i class="fa-solid fa-circle"></i>
-        RECORDING...
-    `;
-
-    stopRecordBtn.disabled = false;
-    replayBtn.disabled = true;
-    sendLogToBackend("[REC] Recording Started");
+    addLog("[INFO] IMU OK | DEPTH OK | PWM OK");
 }
 
-function stopRecording() {
 
-    if (!isRecording) return;
-    if (isButtonLocked(stopRecordBtn)) return;
-    cooldownButton(stopRecordBtn, 1000);
+// RECORD
+function syncRecordUI() {
+    const recordBtn = document.getElementById("recordBtn");
+    const stopBtn = document.getElementById("stopRecordBtn");
+    const replayBtn = document.getElementById("replayBtn");
 
-    isRecording = false;
-    hasRecording = true;
 
-    recordBtn.classList.remove("recording");
-    recordBtn.innerHTML = `
-        <i class="fa-solid fa-circle"></i>
-        START RECORD
-    `;
+    // RECORDING
+    if (isRecording) {
+        recordBtn.classList.add(
+            "recording"
+        );
 
-    stopRecordBtn.disabled = true;
-    replayBtn.disabled = false;
-    sendLogToBackend("[REC] Recording Saved");
-}
+        recordBtn.innerHTML = `
+            <i class="fa-solid fa-circle"></i>
+            RECORDING...
+        `;
 
-function replayRecording() {
-    if (!hasRecording) return;
-    if (replayPlaying) return;
-    if (isButtonLocked(replayBtn)) return;
-    cooldownButton(replayBtn, 5000);
+    } else {
+        recordBtn.classList.remove(
+            "recording"
+        );
 
-    replayPlaying = true;
+        recordBtn.innerHTML = `
+            <i class="fa-solid fa-circle"></i>
+            START RECORD
+        `;
+    }
 
-    replayBtn.innerHTML = `
-        <i class="fa-solid fa-spinner fa-spin"></i>
-        PLAYING...
-    `;
+    // STOP
+    stopBtn.disabled = !isRecording;
 
-    sendLogToBackend("[REPLAY] Started");
+    // REPLAY
+    replayBtn.disabled =
+        !hasRecording || replayPlaying;
 
-    setTimeout(() => {
-        replayPlaying = false;
+
+    if (replayPlaying) {
+        replayBtn.innerHTML = `
+            <i class="fa-solid fa-spinner fa-spin"></i>
+            PLAYING...
+        `;
+
+    } else {
         replayBtn.innerHTML = `
             <i class="fa-solid fa-play"></i>
             REPLAY
         `;
+    }
+}
 
-        sendLogToBackend("[REPLAY] Finished");
+
+async function startRecording() {
+    if (isRecording) return;
+
+    const btn = document.getElementById("recordBtn");
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 800);
+
+    isRecording = true;
+    hasRecording = false;
+
+    syncRecordUI();
+
+    await saveSession({
+        record: {
+            isRecording: true,
+            hasRecording: false,
+            replayPlaying: false
+        }
+    });
+    addLog("[REC] STARTED");
+}
+
+
+async function stopRecording() {
+    if (!isRecording) return;
+
+    const btn = document.getElementById("stopRecordBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 1000);
+
+    isRecording = false;
+    hasRecording = true;
+
+    syncRecordUI();
+
+    await saveSession({
+        record: {
+            isRecording: false,
+            hasRecording: true,
+            replayPlaying: false
+        }
+    });
+    addLog("[REC] SAVED");
+}
+
+
+async function replayRecording() {
+    if (!hasRecording) return;
+    if (replayPlaying) return;
+
+    const btn = document.getElementById("replayBtn");
+
+    if (isButtonLocked(btn)) return;
+    cooldownButton(btn, 5000);
+
+    replayPlaying = true;
+    syncRecordUI();
+
+    await saveSession({
+        record: {
+            isRecording,
+            hasRecording,
+            replayPlaying: true
+        }
+    });
+
+    addLog("[REPLAY] STARTED");
+
+    setTimeout(async () => {
+        replayPlaying = false;
+        syncRecordUI();
+
+        await saveSession({
+            record: {
+                isRecording,
+                hasRecording,
+                replayPlaying: false
+            }
+        });
+        addLog("[REPLAY] FINISHED");
     }, 5000);
 }
 
 
+// ADVANCED
+async function toggleAutoSnapshot(e) {
+    await saveSession({advanced: {autoSnapshot: e.target.checked}});
+}
 
 
-function takeSnapshot() {
+async function takeSnapshot() {
     const btn = document.getElementById("snapshotBtn");
 
     if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 1200);
-
-    sendLogToBackend("[SNAPSHOT] Captured");
+    cooldownButton(btn, 1000);
+    addLog("[SNAPSHOT] CAPTURED");
 }
 
-function resetSession() {
+
+async function resetSession() {
     const btn = document.getElementById("resetSessionBtn");
 
     if (isButtonLocked(btn)) return;
     cooldownButton(btn, 2000);
 
-    trajPath = [];
+    try {
+        await fetch("/session/reset", {
+            method: "POST"
+        });
 
-    document.getElementById("qrHistoryBox").innerHTML = "";
-    document.getElementById("logBox").innerHTML = "";
+        trajPath = [];
+        document.getElementById("logBox").innerHTML = "";
+        document.getElementById("qrHistoryBox").innerHTML = "";
 
-    sendLogToBackend("[SYSTEM] Session Reset");
+        await loadSession();
+        addLog("[SYSTEM] RESET");
+
+    } catch (err) {
+        console.error(err);
+    }
 }
 
-function emergencyStop() {
+
+async function emergencyStop() {
     const btn = document.getElementById("emergencyBtn");
-
     if (isButtonLocked(btn)) return;
+
     cooldownButton(btn, 3000);
+    btn.classList.add("active");
 
-    sendLogToBackend("[EMERGENCY] STOP ACTIVATED");
-    console.log("!!! EMERGENCY STOP !!!");
+    await saveSession({
+        advanced: {
+            emergency: true
+        }
+    });
+
+    addLog("[EMERGENCY] STOP");
 }
-

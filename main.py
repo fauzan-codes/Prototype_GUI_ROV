@@ -2,93 +2,113 @@ from fastapi import FastAPI, WebSocket, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, FileResponse
 from starlette.websockets import WebSocketDisconnect
+
 from pyzbar.pyzbar import decode as qr_decode
+
 from collections import deque
 from datetime import datetime
 from pathlib import Path
+
 import serial.tools.list_ports
 import serial
+
 import asyncio
-import random
 import threading
-import time
+import random
 import json
+import time
 import cv2
 import re
-import os
 
 
-qr_result = {
-    "data": None,
-    "last_scan_time": 0,
-    "last_log_time": 0, 
-    "last_raw": None,
-    "last_side": None,
-    "updated": False,
-
-    "last_invalid_time": 0,
-    "last_invalid_raw": None,
-
-    "source": None 
-}
-
-active_streams = {
-    0: 0,
-    1: 0
-}
-
-latest_frames = {
-    0: None,
-    1: None
-}
-
-active_connections = {
-    0: set(),
-    1: set()
-}
-
-serial_conn = None
-serial_thread = None
-serial_running = False
-serial_tx_queue = deque()
-frame_lock = threading.Lock()
-log_buffer = deque(maxlen=100)
-
-
-# ============================== CONFIG ==============================
-TITLE_TAG = "SEADIVER TEAM"
-
-TITLE = "ROV GROUND CONTROL STATION"
-SUB_TITLE = "REMOTELY OPERATED VEHICLE  ·  MONITORING & CONTROL"
-UNIVERSITY = "UNIVERSITAS NEGERI SURABAYA"
-TEAM_NAME = "SEADIVER TEAM"
-
-DANGER_DEPTH = 200      #cm
-POOL_DEPTH = 300        #cm
-SETPOINT_DEPTH = 150    #cm
-
-TRAJECTORY_X = 500      #cm
-TRAJECTORY_Y = 500      #cm
-
-
+# =============== APP ===============
 app = FastAPI()
-shutdown_event = threading.Event()
+
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# folder
-CAPTURE_DIR = Path("data/capture")
-CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+shutdown_event = threading.Event()
 
 
-# ============================== ROOT ==============================
+# =============== SESION STATE ===============
+session_state = {
+    # BASIC
+    "mode": "KEYBOARD",
+
+    "serial": {
+        "connected": False,
+        "port": None
+    },
+
+    "camera": {
+        "1": False,
+        "2": False
+    },
+
+    # PID
+    "pid": {
+        "kp": 0.0,
+        "ki": 0.0,
+        "kd": 0.0
+    },
+
+    # TRAJECTORY
+    "trajectory": [],
+
+    # QR
+    "qr": {
+        "main": {
+            "side": "WAITING",
+            "raw": "WAITING SCAN...",
+            "time": "--"
+        },
+        "history": []
+    },
+
+    # LOG
+    "logs": [],
+
+    # RECORD
+    "record": {
+        "isRecording": False,
+        "hasRecording": False,
+        "replayPlaying": False
+    },
+
+    # ADVANCE
+    "advanced": {
+        "autoSnapshot": False,
+        "emergency": False
+    }
+}
+
+
+# =============== CONFIG ===============
+TITLE_TAG = "SEADIVER TEAM"
+
+TITLE = "ROV GROUND CONTROL STATION"
+SUB_TITLE = "REMOTELY OPERATED VEHICLE · MONITORING & CONTROL"
+UNIVERSITY = "UNIVERSITAS NEGERI SURABAYA"
+TEAM_NAME = "SEADIVER TEAM"
+
+POOL_DEPTH = 300
+DANGER_DEPTH = 200
+SETPOINT_DEPTH = 150
+
+TRAJECTORY_X = 500
+TRAJECTORY_Y = 500
+
+
+# =============== ROOT ===============
 @app.get("/")
 def index():
     return FileResponse("static/index.html")
 
+
 @app.get("/config")
 def get_config():
     return {
+
         "title_tag": TITLE_TAG,
         "title": TITLE,
         "subtitle": SUB_TITLE,
@@ -104,89 +124,120 @@ def get_config():
     }
 
 
-# ============================== CAMERA SYSTEM ==============================
+# =============== SESION API ===============
+@app.get("/session")
+def get_session():
+    return session_state
+
+
+@app.post("/session")
+async def update_session(req: Request):
+    data = await req.json()
+    merge_dict(session_state, data)
+    return {
+        "success": True
+    }
+
+
+def merge_dict(target, source):
+    for key, value in source.items():
+        if (
+            key in target
+            and isinstance(target[key], dict)
+            and isinstance(value, dict)
+        ):
+            merge_dict(target[key], value)
+        else:
+            target[key] = value
+
+
+# =============== LOG SYSTEM ===============
+log_buffer = deque(maxlen=300)
+
+def add_log(message):
+    now = datetime.now()
+    timestamp = now.strftime("%H:%M:%S")
+    final_log = f"[{timestamp}] {message}"
+    print(final_log)
+    session_state["logs"].append(final_log)
+    log_buffer.append(final_log)
+
+    if len(session_state["logs"]) > 300:
+        session_state["logs"].pop(0)
+
+
+# =============== SERIAL SYSTEM ===============
+serial_conn = None
+serial_running = False
+
 def list_serial_ports():
     ports = serial.tools.list_ports.comports()
     return [p.device for p in ports]
 
-def connect_serial(port, baud=115200):
-    global serial_conn, serial_thread, serial_running
-
-    try:
-        serial_conn = serial.Serial(port, baud, timeout=1)
-        serial_running = True
-
-        add_log(f"[SERIAL] CONNECTED {port}")
-
-        serial_thread = threading.Thread(target=serial_reader, daemon=True)
-        serial_thread.start()
-
-        return True
-
-    except Exception as e:
-        add_log(f"[SERIAL] FAILED {port} | {safe_text(e)}")
-        return False
-    
-def disconnect_serial():
-    global serial_conn, serial_running
-
-    serial_running = False
-
-    if serial_conn:
-        try:
-            serial_conn.close()
-            add_log("[SERIAL] DISCONNECTED")
-        except:
-            pass
-
-    serial_conn = None
-
-def serial_reader():
-    global serial_conn, serial_running
-
-    while serial_running:
-        try:
-            # ================= TX =================
-            if serial_conn and serial_tx_queue:
-                msg = serial_tx_queue.popleft()
-                serial_conn.write(msg.encode())
-                add_log(f"[SERIAL TX] {msg.strip()}")
-
-            # ================= RX =================
-            if serial_conn and serial_conn.in_waiting:
-                line = serial_conn.readline().decode(errors='ignore').strip()
-                if line:
-                    add_log(f"[SERIAL RX] {line}")
-
-        except Exception as e:
-            add_log(f"[SERIAL ERROR] {e}")
-            break
-
-        time.sleep(0.05)
-
 
 @app.get("/serial/ports")
 def get_ports():
-    return {"ports": list_serial_ports()}
+    return {
+        "ports": list_serial_ports()
+    }
+
 
 @app.post("/serial/connect")
 async def serial_connect(req: Request):
+    global serial_conn
+    global serial_running
     data = await req.json()
     port = data.get("port")
 
     if not port:
-        return {"success": False, "message": "No port selected"}
+        return {
+            "success": False
+        }
 
-    ok = connect_serial(port)
-    return {"success": ok}
+    try:
+
+        serial_conn = serial.Serial(
+            port,
+            115200,
+            timeout=1
+        )
+
+        serial_running = True
+        session_state["serial"]["connected"] = True
+        session_state["serial"]["port"] = port
+
+        add_log(f"[SERIAL] CONNECTED {port}")
+        return {
+            "success": True
+        }
+
+    except Exception as e:
+        add_log(f"[SERIAL] FAILED {e}")
+        return {
+            "success": False
+        }
+
 
 @app.post("/serial/disconnect")
 def serial_disconnect():
-    disconnect_serial()
-    return {"success": True}
+    global serial_conn
+    global serial_running
+    serial_running = False
+
+    if serial_conn:
+        serial_conn.close()
+
+    serial_conn = None
+    session_state["serial"]["connected"] = False
+    session_state["serial"]["port"] = None
+
+    add_log("[SERIAL] DISCONNECTED")
+    return {
+        "success": True
+    }
 
 
-# ============================== CAMERA SYSTEM ==============================
+# =============== CAMERA SYSTEM ===============
 class Camera:
     def __init__(self, src):
         self.src = src
@@ -199,21 +250,15 @@ class Camera:
                 self.cap = cv2.VideoCapture(self.src)
 
     def read(self):
-        if self.cap is None or not self.cap.isOpened():
+        if self.cap is None:
             return None
 
-        success, frame = self.cap.read()
-        if not success:
+        ok, frame = self.cap.read()
+
+        if not ok:
             return None
 
-        if frame.shape[1] != 640:
-            frame = cv2.resize(frame, (640, 480))
-        return frame
-    
-    def capture(self):
-        frame = self.read()
-        if frame is None:
-            return None
+        frame = cv2.resize(frame, (640, 480))
         return frame
 
     def release(self):
@@ -223,353 +268,204 @@ class Camera:
                 self.cap = None
 
 
-# INIT 2 CAMERA
 cams = {
-    0: Camera(0),  # Front
-    1: Camera(1)   # Bottom
+    0: Camera(0),
+    1: Camera(1)
 }
-qr_thread = None
-
-
-
-# QRSCAN
-def qr_worker():
-    print("[QR] Worker started")
-
-    while not shutdown_event.is_set():
-        try:
-            with frame_lock:
-                frames = {
-                    cam_id: frame.copy()
-                    for cam_id, frame in latest_frames.items()
-                    if frame is not None
-                }
-
-            if not frames:
-                time.sleep(0.2)
-                continue
-
-            now = time.time()
-
-            if now - qr_result["last_scan_time"] < 2:
-                time.sleep(0.1)
-                continue
-
-            qr_result["last_scan_time"] = now
-
-            # prioritas camera 1
-            for cam_id in sorted(frames.keys()):
-                frame = frames[cam_id]
-
-                small = cv2.resize(frame, (320, 240))
-                gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-                codes = qr_decode(gray)
-
-                for code in codes:
-                    raw = code.data.decode('utf-8', errors='ignore').strip()
-                    if not raw:
-                        continue
-
-                    side = extract_side(raw)
-
-                    if side is None:
-                        last_invalid_raw = qr_result.get("last_invalid_raw")
-                        last_invalid_time = qr_result.get("last_invalid_time", 0)
-
-                        if raw != last_invalid_raw or (now - last_invalid_time > 120):
-                            add_log(f"[QR][CAM {cam_id}] INVALID | {safe_text(raw)}")
-                            qr_result["last_invalid_raw"] = raw
-                            qr_result["last_invalid_time"] = now
-                        continue
-
-                    # prioritas logic
-                    current_source = qr_result.get("source")
-                    allow_update = False
-
-                    if cam_id == 0:
-                        allow_update = True
-
-                    elif cam_id == 1:
-                        if current_source != 0:
-                            allow_update = True
-
-                    if not allow_update:
-                        continue
-
-                    qr_result["data"] = {
-                        "side": side,
-                        "raw": raw,
-                        "cam": cam_id
-                    }
-
-                    qr_result["updated"] = True
-                    qr_result["source"] = cam_id
-
-                    last_side = qr_result.get("last_side")
-                    last_log_time = qr_result["last_log_time"]
-
-                    if last_side != side:
-                        add_log(f"[QR][CAM {cam_id}] DETECTED {side} | {safe_text(raw)}")
-
-                        qr_result["last_side"] = side
-                        qr_result["last_raw"] = raw
-                        qr_result["last_log_time"] = now
-
-                    elif now - last_log_time > 120:
-                        add_log(f"[QR][CAM {cam_id}] DETECTED {side} | {safe_text(raw)}")
-                        qr_result["last_log_time"] = now
-
-        except Exception as e:
-            print("[QR WORKER ERROR]", e)
-
-        time.sleep(0.1)
-
-
-def generate_frames(cam_id: int):
-    cam = cams.get(cam_id)
-    if cam is None:
-        return
-
-    active_streams[cam_id] += 1
-    print(f"[CAM] Camera {cam_id} ONLINE ({active_streams[cam_id]} clients)")
-
-    cam.open()
-
-    try:
-        while not shutdown_event.is_set():
-            frame = cam.read()
-            if frame is None:
-                time.sleep(0.2)
-                continue
-
-            _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-
-            yield (
-                b'--frame\r\n'
-                b'Content-Type: image/jpeg\r\n\r\n' +
-                buffer.tobytes() +
-                b'\r\n'
-            )
-
-            time.sleep(0.05)
-
-    except GeneratorExit:
-        print(f"[INFO] Generator closed cam {cam_id}")
-
-    finally:
-        active_streams[cam_id] -= 1
-        active_streams[cam_id] = max(0, active_streams[cam_id])
-
-        print(f"[CAM] Camera {cam_id} OFFLINE ({active_streams[cam_id]} clients)")
-
-        if active_streams[cam_id] == 0:
-            print(f"[INFO] Releasing camera {cam_id}")
-            cam.release()
-
-
-def safe_text(text, max_len=25):
-    return text[:max_len] + "..." if len(text) > max_len else text
-
-def extract_side(raw):
-    u = raw.upper().strip()
-
-    valid_map = {
-        "A": "A",
-        "B": "B",
-        "C": "C",
-        "D": "D",
-        "SIDE A": "A",
-        "SIDE B": "B",
-        "SIDE C": "C",
-        "SIDE D": "D",
-        "SIDE-A": "A",
-        "SIDE-B": "B",
-        "SIDE-C": "C",
-        "SIDE-D": "D",
-        "SIDE_A": "A",
-        "SIDE_B": "B",
-        "SIDE_C": "C",
-        "SIDE_D": "D",
-        "SISI A": "A",
-        "SISI B": "B",
-        "SISI C": "C",
-        "SISI D": "D",
-        "SISI-A": "A",
-        "SISI-B": "B",
-        "SISI-C": "C",
-        "SISI-D": "D",
-        "SISI_A": "A",
-        "SISI_B": "B",
-        "SISI_C": "C",
-        "SISI_D": "D",
-    }
-
-    if u in valid_map:
-        return valid_map[u]
-
-    match = re.search(r'\b(A|B|C|D)\b', u)
-    if match:
-        return match.group(1)
-
-    return None
 
 
 @app.get("/camera/{cam_id}")
-def video(cam_id: int):
-    if cam_id not in cams:
+def stream_camera(cam_id: int):
+    cam = cams.get(cam_id)
+
+    if cam is None:
         return {"error": "Camera not found"}
 
+    cam.open()
+    session_state["camera"][str(cam_id + 1)] = True
+    add_log(f"[CAM] CAMERA {cam_id + 1} ONLINE")
+
+    def generate():
+        while True:
+            frame = cam.read()
+            if frame is None:
+                continue
+
+            _, buffer = cv2.imencode(".jpg", frame)
+
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n"
+                + buffer.tobytes()
+                + b"\r\n"
+            )
+
+            time.sleep(0.03)
+
     return StreamingResponse(
-        generate_frames(cam_id),
+        generate(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 
-@app.on_event("startup")
-def start_qr_worker():
-    global qr_thread
-    qr_thread = threading.Thread(target=qr_worker, daemon=True)
-    qr_thread.start()
+@app.post("/camera/{cam_id}/off")
+def stop_camera(cam_id: int):
+    cam = cams.get(cam_id)
+    if cam:
+        cam.release()
+
+    session_state["camera"][str(cam_id + 1)] = False
+    add_log(f"[CAM] CAMERA {cam_id + 1} OFFLINE")
+    return {
+        "success": True
+    }
+
+
+# =============== CAPTURE ===============
+CAPTURE_DIR = Path("data/capture")
+CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @app.post("/capture/{cam_id}")
 def capture_camera(cam_id: int):
     cam = cams.get(cam_id)
-
     if cam is None:
+
         return {
-            "success": False,
-            "message": "Camera not found"
+            "success": False
         }
 
     cam.open()
-    frame = cam.capture()
+    frame = cam.read()
     if frame is None:
+
         return {
-            "success": False,
-            "message": "Failed to capture image"
+            "success": False
         }
 
-    date_str = datetime.now().strftime("%d-%m-%Y")
-    existing_files = list(
-        CAPTURE_DIR.glob(f"capture_cam{cam_id + 1}_{date_str}_*.jpg")
-    )
-
-    next_number = len(existing_files) + 1
-    filename = (
-        f"capture_cam{cam_id + 1}_"
-        f"{date_str}_"
-        f"{next_number:03d}.jpg"
+    filename = datetime.now().strftime(
+        f"cam{cam_id+1}_%d%m%Y_%H%M%S.jpg"
     )
 
     save_path = CAPTURE_DIR / filename
     cv2.imwrite(str(save_path), frame)
-    add_log(f"[CAPTURE] Saved {filename}")
-
+    add_log(f"[CAPTURE] {filename}")
     return {
-        "success": True,
-        "filename": filename,
-        "path": str(save_path)
+        "success": True
     }
 
 
-# ============================== WEBSOCKET ==============================
-def add_log(message):
-    now = datetime.now()
-    timestamp = now.strftime("%H:%M:%S")
-    final_log = f"[{timestamp}] {message}"
-    print(final_log)
-    log_buffer.append(final_log)
+# =============== WEBSOCKET ===============
+robot_pos = {
+    "x": TRAJECTORY_X // 2,
+    "y": TRAJECTORY_Y // 2
+}
+
+
+def update_robot():
+    robot_pos["x"] += random.randint(-20, 20)
+    robot_pos["y"] += random.randint(-20, 20)
+
+    robot_pos["x"] = max(
+        0,
+        min(TRAJECTORY_X, robot_pos["x"])
+    )
+
+    robot_pos["y"] = max(
+        0,
+        min(TRAJECTORY_Y, robot_pos["y"])
+    )
+
+    point = {
+        "x": robot_pos["x"],
+        "y": robot_pos["y"]
+    }
+
+    session_state["trajectory"].append(point)
+    if len(session_state["trajectory"]) > 500:
+        session_state["trajectory"].pop(0)
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
-
+    add_log("[WS] CONNECTED")
     try:
         while True:
-            msg = None
-
-            try:
-                recv = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
-                msg = json.loads(recv)
-            except asyncio.TimeoutError:
-                pass
-            except WebSocketDisconnect:
-                print("[WS] Client disconnected")
-                break
-
-            if msg:
-                if msg.get("type") == "pid":
-                    add_log(f"[PID] Kp={msg.get('kp')} Ki={msg.get('ki')} Kd={msg.get('kd')}")
-
-                elif msg.get("type") == "log":
-                    add_log(msg.get("message"))
-
-            data = {
-                "depth": random.randint(0, POOL_DEPTH),
+            update_robot()
+            telemetry = {
+                "depth": random.randint(0, 300),
                 "heading": random.randint(0, 360),
                 "pressure": random.randint(900, 1100),
-                "pwm": [random.randint(1000, 2000) for _ in range(6)]
+
+                "pwm": [
+                    random.randint(1000, 2000)
+                    for _ in range(6)
+                ]
             }
 
-            log = log_buffer.popleft() if log_buffer else None
+            payload = {
+                "telemetry": telemetry,
+                "trajectory": session_state["trajectory"][-1],
 
-            now = datetime.now()
-            timestamp = time.time()
+                "datetime":
+                    datetime.now().strftime(
+                        "%A, %d %b %Y - %H:%M:%S"
+                    ),
 
-            update_robot()
+                "timestamp": time.time(),
+                "session": session_state
+            }
 
-            qr_payload = None
-            if qr_result["updated"]:
-                qr_payload = qr_result["data"]
-                qr_result["updated"] = False
-
-            await ws.send_json({
-                "telemetry": data,
-                "log": log,
-                "datetime": now.strftime("%A, %d %b %Y - %H:%M:%S"),
-                "timestamp": timestamp,
-                "qr": qr_payload,
-
-                "trajectory": robot_pos #dummy data trajectory
-            })
-
-            await asyncio.sleep(0.3) #cd
+            await ws.send_json(payload)
+            await asyncio.sleep(0.3)
 
     except WebSocketDisconnect:
-        print("[WS] Disconnected safely")
+        add_log("[WS] DISCONNECTED")
 
 
-# ============================== DUMMY TRAJECTORY ==============================
-robot_pos = {
-    "x": TRAJECTORY_X // 2,
-    "y": TRAJECTORY_Y // 2
-}
-def update_robot():
-    step = 20
+# =============== RESET SESION ===============
+@app.post("/session/reset")
+def reset_session():
 
-    dx = random.uniform(-step, step)
-    dy = random.uniform(-step, step)
-    smoothing = 0.7
+    session_state["trajectory"] = []
+    session_state["logs"] = []
+    session_state["qr"] = {
 
-    robot_pos["x"] += dx * smoothing
-    robot_pos["y"] += dy * smoothing
+        "main": {
+            "side": "WAITING",
+            "raw": "WAITING SCAN...",
+            "time": "--"
+        },
 
-    robot_pos["x"] = max(0, min(TRAJECTORY_X, robot_pos["x"]))
-    robot_pos["y"] = max(0, min(TRAJECTORY_Y, robot_pos["y"]))
+        "history": []
+    }
+
+    session_state["record"] = {
+        "isRecording": False,
+        "hasRecording": False,
+        "replayPlaying": False
+    }
+
+    session_state["camera"] = {
+        "1": False,
+        "2": False
+    }
+
+    add_log("[SYSTEM] SESSION RESET")
+
+    return {
+        "success": True
+    }
 
 
-# ============================== SHUTDOWN ==============================
+# =============== SHUTDOWN ===============
 @app.on_event("shutdown")
 def shutdown_server():
 
-    print("[INFO] Shutdown initiated")
+    print("[SERVER] SHUTDOWN")
 
-    shutdown_event.set()
-
-    for cam_id, cam in cams.items():
-        print(f"[INFO] Force release camera {cam_id}")
+    for cam in cams.values():
         cam.release()
 
-    print("[INFO] All cameras released")
+    shutdown_event.set()
