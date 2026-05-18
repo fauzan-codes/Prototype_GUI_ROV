@@ -102,12 +102,12 @@ SUB_TITLE = "REMOTELY OPERATED VEHICLE · MONITORING & CONTROL"
 UNIVERSITY = "UNIVERSITAS NEGERI SURABAYA"
 TEAM_NAME = "SEADIVER TEAM"
 
-POOL_DEPTH = 300
-DANGER_DEPTH = 180
-SETPOINT_DEPTH = 150
+POOL_DEPTH = 300        #cm
+DANGER_DEPTH = 180      #cm
+SETPOINT_DEPTH = 150    #cm
 
-TRAJECTORY_X = 500
-TRAJECTORY_Y = 500
+TRAJECTORY_X = 500      #cm
+TRAJECTORY_Y = 500      #cm
 
 VALID_QR = ["A", "B", "C", "D"]
 QR_SCAN_COOLDOWN = 1.5
@@ -349,24 +349,18 @@ def stream_camera(cam_id: int):
                 if frame is None:
                     now = time.time()
 
-                    # Kalau sebelumnya ONLINE → jadi OFFLINE
                     if is_online:
                         is_online = False
                         session_state["camera_status"][cam_id] = False
                         add_log(f"[CAM] CAMERA {cam_id + 1} OFFLINE")
 
-                    # ❗ jangan spam log (max 1x / 2 detik)
                     if now - last_fail_time > 2:
                         last_fail_time = now
-                        # optional: log connecting (boleh dimatikan kalau noisy)
                         # add_log(f"[CAM] CAMERA {cam_id + 1} CONNECTING...")
 
                     await asyncio.sleep(0.1)
                     continue
 
-                # ===============================
-                # ✅ FRAME BERHASIL (ONLINE)
-                # ===============================
                 if not is_online:
                     is_online = True
 
@@ -424,8 +418,6 @@ def stop_camera(cam_id: int):
 
 
 # =============== CAPTURE ===============
-
-
 @app.post("/capture/{cam_id}")
 def capture_camera(cam_id: int):
     cam = cams.get(cam_id)
@@ -495,6 +487,7 @@ async def websocket_endpoint(ws: WebSocket):
             update_robot()
             telemetry = {
                 "depth": random.randint(0, 300),
+                # "depth": 200,
                 "heading": random.randint(0, 360),
                 "pressure": random.randint(900, 1100),
 

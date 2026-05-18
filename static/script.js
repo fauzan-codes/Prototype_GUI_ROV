@@ -7,6 +7,11 @@ const camErrorLogged = {};
 
 let activeFullscreenCam = null;
 
+let alarmAudio = new Audio("/assets/alarm.mp3");
+alarmAudio.loop = true;
+alarmAudio.volume = 0.7;
+let isAlarmPlaying = false;
+
 let lastQR = null;
 let lastQRTime = 0;
 let lastQRHistoryCount = 0;
@@ -159,6 +164,8 @@ function postJSON(url, body = {}) {
     }).then(r => r.json());
 }
 
+
+// BUTTON CD
 function cooldownButton(btn, time = 1000) {
     if (!btn) return;
     btn.classList.add("cooldown");
@@ -176,6 +183,27 @@ function isButtonLocked(btn) {
         btn.classList.contains("cooldown")
     );
 }
+
+
+// SFX WARNING
+function playAlarm() {
+    if (!isAlarmPlaying) {
+        alarmAudio.currentTime = 0;
+        alarmAudio.play().catch(() => {});
+        isAlarmPlaying = true;
+
+        alarmAudio.playbackRate = 1.2;   //speed
+    }
+}
+
+function stopAlarm() {
+    if (isAlarmPlaying) {
+        alarmAudio.pause();
+        alarmAudio.currentTime = 0;
+        isAlarmPlaying = false;
+    }
+}
+
 
 
 // CONFIG
@@ -404,7 +432,6 @@ function handleTelemetry(msg) {
         document.getElementById("t_pressure").innerText = `PRESSURE: ${data.pressure}`;
 
         if (Array.isArray(data.pwm)) {
-
             data.pwm.forEach((val, i) => {
                 const el = document.getElementById(`t_pwm${i + 1}`);
 
@@ -864,6 +891,7 @@ function initDepthCanvas() {
         ctx.fillStyle = "#020617";
         ctx.fillRect(0, 0, w, h);
 
+        // const depth = 200;
         const depth = depthData.depth;
         const pool = DEPTH_CONFIG.pool;
         const danger = DEPTH_CONFIG.danger;
@@ -970,32 +998,25 @@ function updateDepthInfo() {
     if (!box) return;
     const depth = depthData.depth;
 
-    box.querySelector(".d-num")
-        .innerText = depth;
-
-    box.querySelector(".h-num")
-        .innerText =
-        DEPTH_CONFIG.pool;
-
-    box.querySelector(".sp-num")
-        .innerText =
-        DEPTH_CONFIG.setpoint;
+    box.querySelector(".d-num").innerText = depth;
+    box.querySelector(".h-num").innerText = DEPTH_CONFIG.pool;
+    box.querySelector(".sp-num").innerText = DEPTH_CONFIG.setpoint;
 
     const card = document.querySelector(".depth-card");
     const dangerText = box.querySelector(".danger-text");
     const dNum = box.querySelector(".d-num");
 
-    if (
-        depth >= DEPTH_CONFIG.danger
-    ) {
+    if (depth >= DEPTH_CONFIG.danger) {
         card.classList.add("danger");
         dangerText.style.opacity = "1";
         dNum.classList.add("danger");
+        // playAlarm();
 
     } else {
         card.classList.remove("danger");
         dangerText.style.opacity = "0";
         dNum.classList.remove("danger");
+        stopAlarm();
     }
 }
 
