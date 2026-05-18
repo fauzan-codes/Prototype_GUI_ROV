@@ -98,6 +98,10 @@ SETPOINT_DEPTH = 150
 TRAJECTORY_X = 500
 TRAJECTORY_Y = 500
 
+VALID_QR = ["A", "B", "C", "D"]
+QR_SCAN_COOLDOWN = 1.5
+QR_PUBLISH_INTERVAL = 120
+
 
 # =============== ROOT ===============
 @app.get("/")
@@ -198,6 +202,19 @@ serial_running = False
 def list_serial_ports():
     ports = serial.tools.list_ports.comports()
     return [p.device for p in ports]
+
+def send_serial(data: str):
+    global serial_conn
+
+    try:
+        if serial_conn and serial_conn.is_open:
+            serial_conn.write((data + "\n").encode())
+            return True
+
+    except Exception as e:
+        add_log(f"[SERIAL] SEND FAILED {e}")
+
+    return False
 
 
 @app.get("/serial/ports")
@@ -307,25 +324,42 @@ def stream_camera(cam_id: int):
         return {"error": "Camera not found"}
 
     cam.open()
+
     session_state["camera"][str(cam_id + 1)] = True
     add_log(f"[CAM] CAMERA {cam_id + 1} ONLINE")
 
-    def generate():
-        while True:
-            frame = cam.read()
-            if frame is None:
-                continue
+    async def generate():
+        try:
+            while not shutdown_event.is_set():
+                frame = cam.read()
+                
+                if frame is None:
+                    await asyncio.sleep(0.1)
+                    continue
 
-            _, buffer = cv2.imencode(".jpg", frame)
+                frame = process_qr(frame, cam_id)
+                ok, buffer = cv2.imencode(".jpg", frame)
 
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n"
-                + buffer.tobytes()
-                + b"\r\n"
-            )
+                if not ok:
+                    await asyncio.sleep(0.1)
+                    continue
 
-            time.sleep(0.03)
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n"
+                    + buffer.tobytes()
+                    + b"\r\n"
+                )
+
+                await asyncio.sleep(0.03)
+
+        except asyncio.CancelledError:
+            print(f"[CAM] STREAM {cam_id+1} CANCELLED")
+
+        finally:
+            cam.release()
+            session_state["camera"][str(cam_id + 1)] = False
+            add_log(f"[CAM] CAMERA {cam_id + 1} OFFLINE")
 
     return StreamingResponse(
         generate(),
@@ -449,20 +483,139 @@ async def websocket_endpoint(ws: WebSocket):
         add_log("[WS] DISCONNECTED")
 
 
+# =============== QR SYSTEM ===============
+qr_state = {
+    "last_scan_time": {},
+    "last_publish_time": {},
+    "last_main_result": None,
+    "last_invalid_raw": None
+}
+
+
+def process_qr(frame, cam_id):
+    now = time.time()
+    try:
+
+        last_scan = qr_state["last_scan_time"].get(cam_id, 0)
+        if (now - last_scan) < QR_SCAN_COOLDOWN:
+            return frame
+
+        qr_state["last_scan_time"][cam_id] = now
+        decoded = qr_decode(frame)
+
+        if not decoded:
+            return frame
+
+        for obj in decoded:
+
+            raw = (
+                obj.data
+                .decode("utf-8")
+                .strip()
+                .upper()
+            )
+
+            if raw not in VALID_QR:
+                if raw != qr_state.get("last_invalid_raw"):
+                    qr_state["last_invalid_raw"] = raw
+                    add_log(f"[QR] INVALID QRCODE: {short_text(raw)}")
+                continue
+
+            current_time = datetime.now().strftime("%H:%M:%S")
+            points = obj.polygon
+
+            if len(points) >= 4:
+                for i in range(len(points)):
+                    p1 = points[i]
+                    p2 = points[(i + 1) % len(points)]
+
+                    cv2.line(
+                        frame,
+                        (p1.x, p1.y),
+                        (p2.x, p2.y),
+                        (0, 255, 0),
+                        3
+                    )
+
+            cv2.putText(
+                frame,
+                f"SIDE {raw}",
+                (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (0, 255, 0),
+                3
+            )
+
+            history_item = {
+                "side": raw,
+                "time": current_time
+            }
+
+            session_state["qr"]["history"].insert(0, history_item)
+            session_state["qr"]["history"] = (session_state["qr"]["history"][:30])
+            last_main = qr_state["last_main_result"]
+            last_publish = qr_state["last_publish_time"].get(raw, 0)
+
+            is_different = raw != last_main
+            cooldown_passed = (now - last_publish) >= QR_PUBLISH_INTERVAL
+            should_publish = (is_different or cooldown_passed)
+
+            if should_publish:
+                qr_state["last_main_result"] = raw
+                qr_state["last_publish_time"][raw] = now
+
+                session_state["qr"]["main"] = {
+                    "side": raw,
+                    "raw": f"CAM {cam_id+1} | SIDE {short_text(raw)}",
+                    "time": current_time
+                }
+
+                add_log(f"[QR] SIDE {raw} DETECTED FROM CAM {cam_id+1}")
+                send_serial(f"QR:{raw}")
+            break
+
+    except Exception as e:
+        print("[QR ERROR]", e)
+
+    return frame
+
+def short_text(text, max_len=10):
+    if len(text) > max_len:
+        return text[:max_len] + "..."
+    return text
+
+@app.post("/qr/clear")
+def clear_qr_history():
+    session_state["qr"]["history"] = []
+    session_state["qr"]["main"] = {
+        "side": "WAITING",
+        "raw": "WAITING SCAN...",
+        "time": "--"
+    }
+
+    qr_state["last_main_result"] = None
+    add_log("[QR] HISTORY CLEARED")
+    return {
+        "success": True
+    }
+
+
+
 # =============== RESET SESION ===============
 @app.post("/session/reset")
 def reset_session():
+    global qr_state
 
     session_state["trajectory"] = []
     session_state["logs"] = []
-    session_state["qr"] = {
 
+    session_state["qr"] = {
         "main": {
             "side": "WAITING",
             "raw": "WAITING SCAN...",
             "time": "--"
         },
-
         "history": []
     }
 
@@ -475,6 +628,12 @@ def reset_session():
     session_state["camera"] = {
         "1": False,
         "2": False
+    }
+
+    qr_state = {
+        "last_scan_time": 0,
+        "last_publish_time": {},
+        "last_main_result": None
     }
 
     add_log("[SYSTEM] SESSION RESET")

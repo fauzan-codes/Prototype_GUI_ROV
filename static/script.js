@@ -8,6 +8,8 @@ let activeFullscreenCam = null;
 
 let lastQR = null;
 let lastQRTime = 0;
+let lastQRHistoryCount = 0;
+let lastQRMainRaw = "";
 
 let ws = null;
 let reconnectTimeout = null;
@@ -260,19 +262,18 @@ function applySession(state) {
     // QR
     if (state.qr) {
         const main = state.qr.main;
-        document.getElementById("qrMainSide").innerText = main.side;
-        document.getElementById("qrMainRaw").innerText = main.raw;
-        document.getElementById("qrMainTime").innerText = main.time;
-        const historyBox = document.getElementById("qrHistoryBox");
+        
+        document.getElementById("qrMainSide").innerText = main.side && main.side !== "WAITING" ? `SIDE - ${main.side}` : "WAITING";
+        document.getElementById("qrMainRaw").innerText = main.raw || "WAITING SCAN...";
+        document.getElementById("qrMainTime").innerText = main.time || "--";
 
+        const historyBox = document.getElementById("qrHistoryBox");
         historyBox.innerHTML = "";
 
         if (Array.isArray(state.qr.history)) {
             state.qr.history.forEach(item => {
                 const div = document.createElement("div");
-
                 div.classList.add("qr-item");
-
                 div.innerHTML = `
                     <span class="qr-time">
                         ${item.time || "--"}
@@ -446,24 +447,55 @@ function updateSessionRealtime(state) {
 
     // QR
     if (state.qr) {
-        document.getElementById("qrMainSide")
-            .innerText =
-            state.qr.main.side;
+        document.getElementById("qrMainSide").innerText =
+            state.qr.main.side &&
+            state.qr.main.side !== "WAITING"
+                ? `SIDE - ${state.qr.main.side}`
+                : "WAITING";
 
-        document.getElementById("qrMainRaw")
-            .innerText =
-            state.qr.main.raw;
+        document.getElementById("qrMainRaw").innerText = state.qr.main.raw || "WAITING SCAN...";
+        document.getElementById("qrMainTime").innerText = state.qr.main.time || "--";
 
-        document.getElementById("qrMainTime")
-            .innerText =
-            state.qr.main.time;
+        // HISTORY
+        if (Array.isArray(state.qr.history)) {
+            const historyBox = document.getElementById("qrHistoryBox");
+            const incoming = JSON.stringify(state.qr.history);
+            const current = historyBox.dataset.cache || "";
+
+            if (incoming !== current) {
+                historyBox.innerHTML = "";
+                state.qr.history.forEach(item => {
+
+                    const div =
+                        document.createElement("div");
+
+                    div.classList.add("qr-item");
+
+                    div.innerHTML = `
+                        <span class="qr-time">
+                            ${item.time || "--"}
+                        </span>
+
+                        <span class="qr-sep">
+                            -
+                        </span>
+
+                        <span class="qr-text">
+                            ${item.side || "--"}
+                        </span>
+                    `;
+
+                    historyBox.appendChild(div);
+                });
+
+                historyBox.dataset.cache = incoming;
+            }
+        }
     }
 
     // LOG REALTIME
     if (Array.isArray(state.logs)) {
         const box = document.getElementById("logBox");
-        const lastUI = box.lastElementChild?.innerText;
-        const lastState = state.logs[state.logs.length - 1];
 
         if (state.logs.length < lastRenderedLogCount) {
             document.getElementById("logBox").innerHTML = "";
@@ -602,12 +634,12 @@ async function toggleCam(id, el, fromSession = false) {
     if (el.checked) {
         camStates[id] = "loading";
         placeholder.innerText = "CONNECTING...";
-
         img.src = `/camera/${camIndex}?t=${Date.now()}`;
-        img.onload = async () => {
 
+        img.onload = async () => {
             camStates[id] = "active";
             box.classList.add("active");
+            img.classList.add("active");
             setCameraButtons(id, true);
             placeholder.innerText = "";
 
@@ -623,14 +655,15 @@ async function toggleCam(id, el, fromSession = false) {
         img.onerror = () => {
             camStates[id] = "error";
             placeholder.innerText = "CAMERA NOT FOUND";
-
             setCameraButtons(id, false);
             el.checked = false;
+            img.classList.remove("active");
             img.src = "";
         };
 
     } else {
         img.src = "";
+        img.classList.remove("active");
         camStates[id] = "idle";
         box.classList.remove("active");
         placeholder.innerText = "CAMERA OFFLINE";
@@ -696,7 +729,7 @@ function openFullscreenCam(id) {
     const fullscreenTitle = document.getElementById("fullscreenTitle");
 
     fullscreenImage.src = source.src;
-    fullscreenTitle.innerText =`CAMERA ${id} FULLSCREEN`;
+    fullscreenTitle.innerText =`CAMERA ${id}`;
     
     overlay.classList.add("active");
     activeFullscreenCam = id;
@@ -800,7 +833,7 @@ function initDepthCanvas() {
         }
 
         ctx.strokeStyle = "#38bdf8";
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 1.5;
 
         ctx.beginPath();
         ctx.moveTo(0, depthY);
@@ -831,6 +864,7 @@ function initDepthCanvas() {
 
         ctx.setLineDash([]);
         ctx.strokeStyle = "#22c55e";
+        ctx.lineWidth = 1.2;
 
         ctx.beginPath();
         ctx.moveTo(0, spY);
@@ -956,7 +990,7 @@ function initTrajCanvas() {
         });
 
         ctx.strokeStyle = "#22c55e";
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.5;
         ctx.stroke();
     }
 
@@ -1183,6 +1217,7 @@ function renderLog(text) {
     const box = document.getElementById("logBox");
     if (!box) return;
     const line = document.createElement("div");
+    line.classList.add("log-item");
     line.innerText = text;
     box.appendChild(line);
     box.scrollTop = box.scrollHeight;
