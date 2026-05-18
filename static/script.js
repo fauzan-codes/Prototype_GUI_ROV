@@ -220,23 +220,21 @@ async function saveSession(data) {
     }
 }
 
-
 function applySession(state) {
     if (!state) return;
 
     // MODE
     currentMode = state.mode || "KEYBOARD";
     document.getElementById("mode").innerText = `● MODE: ${currentMode}`;
+    const modeEl = document.getElementById("mode");
 
     document.querySelectorAll(".mode-btn").forEach(btn => {
-            btn.classList.remove("active");
-
-            if (
-                btn.innerText.trim() === currentMode
-            ) {
-                btn.classList.add("active");
-            }
-        });
+        btn.classList.remove("active");
+        if (btn.innerText.trim() === currentMode) {
+            btn.classList.add("active");
+            modeEl.style.setProperty("color", "#22c55e", "important");
+        }
+    });
 
 
     // SERIAL
@@ -1009,41 +1007,50 @@ function initTrajCanvas() {
 
     function resizeCanvas() {
         const parent = canvas.parentElement;
-        canvas.width = parent.clientWidth;
-        canvas.height = parent.clientHeight;
+
+        const parentW = parent.clientWidth;
+        const parentH = parent.clientHeight;
+
+        const aspect = TRAJ_CONFIG.x / TRAJ_CONFIG.y;
+
+        let newW = parentW;
+        let newH = parentW / aspect;
+
+        // kalau tinggi melebihi container → adjust
+        if (newH > parentH) {
+            newH = parentH;
+            newW = parentH * aspect;
+        }
+
+        canvas.width = newW;
+        canvas.height = newH;
     }
 
     function cmToPx(x, y) {
         return {
-            x:
-                (x / TRAJ_CONFIG.x)
-                * canvas.width,
-
-            y:
-                (y / TRAJ_CONFIG.y)
-                * canvas.height
+            x: (x / TRAJ_CONFIG.x) * canvas.width,
+            y: (y / TRAJ_CONFIG.y) * canvas.height
         };
     }
 
     function drawGrid() {
         ctx.strokeStyle = "#1f2937";
+        ctx.lineWidth = 1;
 
-        for (
-            let x = 0;
-            x < canvas.width;
-            x += 40
-        ) {
+        // ❗ grid size = berdasarkan skala (biar kotak)
+        const cellSize = Math.min(
+            canvas.width / TRAJ_CONFIG.x,
+            canvas.height / TRAJ_CONFIG.y
+        ) * 50; // 50 cm per grid
+
+        for (let x = 0; x <= canvas.width; x += cellSize) {
             ctx.beginPath();
             ctx.moveTo(x, 0);
             ctx.lineTo(x, canvas.height);
             ctx.stroke();
         }
 
-        for (
-            let y = 0;
-            y < canvas.height;
-            y += 40
-        ) {
+        for (let y = 0; y <= canvas.height; y += cellSize) {
             ctx.beginPath();
             ctx.moveTo(0, y);
             ctx.lineTo(canvas.width, y);
@@ -1053,22 +1060,16 @@ function initTrajCanvas() {
 
     function drawPath() {
         if (trajPath.length < 2) return;
+
         ctx.beginPath();
 
         trajPath.forEach((p, i) => {
             const pos = cmToPx(p.x, p.y);
 
             if (i === 0) {
-                ctx.moveTo(
-                    pos.x,
-                    pos.y
-                );
-
+                ctx.moveTo(pos.x, pos.y);
             } else {
-                ctx.lineTo(
-                    pos.x,
-                    pos.y
-                );
+                ctx.lineTo(pos.x, pos.y);
             }
         });
 
@@ -1084,26 +1085,15 @@ function initTrajCanvas() {
         const pos = cmToPx(last.x, last.y);
 
         ctx.beginPath();
-        ctx.arc(
-            pos.x,
-            pos.y,
-            6,
-            0,
-            Math.PI * 2
-        );
-
+        ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
         ctx.fillStyle = "#ef4444";
         ctx.fill();
     }
 
     function render() {
         resizeCanvas();
-        ctx.clearRect(
-            0,
-            0,
-            canvas.width,
-            canvas.height
-        );
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         drawGrid();
         drawPath();
@@ -1130,15 +1120,29 @@ function initROVImage() {
     const img = document.getElementById("rov-img");
     const placeholder = document.getElementById("rov-placeholder");
 
-    img.onload = () => {
-        img.style.display = "block";
-        placeholder.style.display = "none";
-    };
+    function updateROV(src) {
+        if (!src || src.trim() === "") {
+            img.style.display = "none";
+            placeholder.style.display = "block";
+            placeholder.innerText = "ROV DESIGN";
+            return;
+        }
 
-    img.onerror = () => {
-        img.style.display = "none";
-        placeholder.style.display = "block";
-    };
+        img.src = src + "?t=" + Date.now();
+        img.onload = () => {
+            img.style.display = "block";
+            placeholder.style.display = "none";
+        };
+
+        img.onerror = () => {
+            img.style.display = "none";
+            placeholder.style.display = "block";
+            placeholder.innerText = "ROV DESIGN";
+        };
+    }
+
+    updateROV(img.getAttribute("src"));
+    window.setROVImage = updateROV;
 }
 
 
