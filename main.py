@@ -432,32 +432,48 @@ def stop_camera(cam_id: int):
 
 
 # =============== CAPTURE ===============
+def get_next_capture_number(cam_name, date_str):
+    files = list(CAPTURE_DIR.glob(f"{cam_name}_{date_str}_*.*"))
+    numbers = []
+
+    for f in files:
+        match = re.search(r'_(\d{3})\.', f.name)
+        if match:
+            numbers.append(int(match.group(1)))
+
+    return max(numbers, default=0) + 1
+
+
 @app.post("/capture/{cam_id}")
 def capture_camera(cam_id: int):
     cam = cams.get(cam_id)
-    if cam is None:
 
+    if cam is None:
         return {
             "success": False
         }
 
     cam.open()
     frame = cam.read()
-    if frame is None:
 
+    if frame is None:
         return {
             "success": False
         }
 
-    filename = datetime.now().strftime(
-        f"cam{cam_id+1}_%d%m%Y_%H%M%S.jpg"
-    )
+    now = datetime.now()
+    date_str = now.strftime("%d-%m-%Y")
+    cam_name = f"cam{cam_id + 1}"
+    number = get_next_capture_number(cam_name, date_str)
 
+    filename = (f"{cam_name}_{date_str}_{number:03d}.jpg")
     save_path = CAPTURE_DIR / filename
     cv2.imwrite(str(save_path), frame)
-    add_log(f"[CAPTURE] {filename}")
+    add_log(f"[CAPTURE] SAVED {filename}")
+
     return {
-        "success": True
+        "success": True,
+        "filename": filename
     }
 
 
