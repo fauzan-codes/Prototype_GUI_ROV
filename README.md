@@ -1,402 +1,209 @@
-# 📘 ROV Ground Control Station (GCS)
-### Web-Based Monitoring & Control System (FastAPI + WebSocket)
+# 🚀 Setup & Run (Linux Only, Tanpa Virtual Environment)
+
+Panduan ini untuk menjalankan project dari nol sampai bisa diakses di browser.
 
 ---
 
-# 🧭 0. Persiapan Awal (REAL WORLD SETUP)
+# 1. Install Dependencies System
 
-## 🪑 Setup Meja Kerja (GSC_ROV_Competition - Web Version)
-
-```text
-[ Laptop (Browser UI) ]
-        │
-     (LAN Cable / Switch)
-        │
-[ Jetson / Mini PC di ROV (SERVER) ]
-        │
- ├── Camera Front
- ├── Camera Bottom
- ├── Pixhawk (MAVLink / Serial)
- ├── Sensor Depth
- ├── IMU (Optional)
- └── Power System
+```bash
+sudo apt update
+sudo apt install python3 python3-pip libzbar0
 ```
 
 ---
 
-## ✅ Checklist Hardware
+# 2. Clone / Download Project
 
-- Laptop (Ground Control Station - Browser)
-- Jetson / Mini PC (ROV - Server)
-- 2 Kamera (Front & Bottom)
-- Pixhawk (WAJIB untuk kontrol)
-- Sensor Depth
-- Kabel LAN / Switch / Router
-- Joystick (opsional)
-
----
-
-# 💻 1. Setup Software
-
-## 🧰 Tools
-
-- Python 3.10+
-- VSCode / PyCharm
-
----
-
-## 📁 Buat Project Folder
-
+```bash
+git clone <link repo>
+cd <nama-folder-project>
 ```
-mkdir GCS_ROV_Web
-cd GCS_ROV_Web
+
+atau kalau manual:
+
+```bash
+cd folder_project
 ```
 
 ---
 
-## 🐍 Virtual Environment
+# 3. Install Python Requirements
 
-```
-python -m venv venv
-```
-
-Activate:
-
-```
-venv\Scripts\activate
+```bash
+pip3 install -r requirements.txt
 ```
 
 ---
 
-## 📦 Install Dependencies
+# 4. Struktur Minimal Project
+
+Pastikan ada:
 
 ```
-pip install fastapi uvicorn opencv-python numpy websockets
-```
-
-(opsional)
-```
-pip install pymavlink
-```
-
----
-
-# 🧱 2. Struktur Project
-
-```
-GCS_ROV_Web/
+project/
 │
-├── main.py                # FastAPI server
-│
-├── core/
-│   ├── camera.py         # Handle kamera
-│   ├── stream.py         # MJPEG streaming
-│   ├── websocket.py      # Realtime data
-│   └── pixhawk.py        # MAVLink communication
-│
-├── vision/
-│   └── qr_detector.py
-│
+├── main.py
+├── requirements.txt
 ├── static/
-│   ├── index.html        # UI dashboard
+│   ├── index.html
 │   ├── style.css
 │   └── app.js
 │
 ├── assets/
-│   └── rov.png
-│
 └── logs/
 ```
 
 ---
 
-# 🧩 3. Fitur Utama
+# 5. Setting Awal
 
-## 🎥 Camera System
-- Front Camera (MJPEG Stream)
-- Bottom Camera
-- rasio 4:3
+## Kamera
 
-## 🔳 QR Detection
-- Posisi: A / B / C / D
-- Status: Valid / Invalid
+Edit di kode:
 
-## 📏 Altitude / Depth
-- Data realtime dari sensor
+```python
+cv2.VideoCapture(0)  # kamera 1
+cv2.VideoCapture(1)  # kamera 2
+```
 
-## 🧾 Informasi Umum
-- Waktu realtime
-- Status koneksi
+## Serial (Pixhawk / Arduino)
 
-## 🤖 Visual ROV
-- Axis / indikator arah
+Cek port:
 
-## 🗺️ Trajectory
-- Path tracking (Canvas)
+```bash
+ls /dev/ttyUSB*
+```
 
-## 📸 Logging
-- Data logging (CSV / JSON)
+Lalu set di kode:
 
-## 🚨 Alarm
-- Depth warning
-- Error system
-
-## 🎮 Mode Control
-- Manual (keyboard / joystick browser)
-- Autonomous (opsional)
+```python
+serial.Serial('/dev/ttyUSB0', 115200)
+```
 
 ---
 
-# 🪜 4. Step-by-Step Development
+# 6. Jalankan Server
 
----
-
-## STEP 1 – FastAPI Basic Server
-
-```
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.get("/")
-def read_root():
-    return {"status": "server running"}
-```
-
-Run:
-
-```
+```bash
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
----
-
-## STEP 2 – MJPEG Camera Stream (WAJIB)
+Kalau sukses:
 
 ```
-from fastapi.responses import StreamingResponse
-import cv2
-
-cap = cv2.VideoCapture(0)
-
-def generate_frames():
-    while True:
-        success, frame = cap.read()
-        if not success:
-            break
-
-        frame = cv2.resize(frame, (640, 360))
-
-        _, buffer = cv2.imencode('.jpg', frame,
-            [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-
-        frame = buffer.tobytes()
-
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' +
-               frame + b'\r\n')
-
-@app.get("/video")
-def video():
-    return StreamingResponse(generate_frames(),
-        media_type="multipart/x-mixed-replace; boundary=frame")
+Uvicorn running on http://0.0.0.0:8000
 ```
 
 ---
 
-## STEP 3 – WebSocket Realtime Data
+# 7. Akses Web UI
+
+Di browser:
 
 ```
-from fastapi import WebSocket
-import asyncio
-
-@app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
-    await ws.accept()
-    while True:
-        data = {
-            "depth": 120,
-            "qr": "A",
-            "status": "connected"
-        }
-        await ws.send_json(data)
-        await asyncio.sleep(0.05)
+http://localhost:8000
 ```
 
----
-
-## STEP 4 – Frontend UI (Browser)
-
-### index.html
+atau dari device lain:
 
 ```
-<img src="http://IP_JETSON:8000/video">
+http://IP_SERVER:8000
 ```
 
-### WebSocket JS
+Contoh:
 
 ```
-const ws = new WebSocket("ws://IP_JETSON:8000/ws");
-
-ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    console.log(data);
-};
+http://192.168.1.10:8000
 ```
 
 ---
 
-## STEP 5 – QR Detection
+# 8. Endpoint Penting
+
+## Stream Kamera
 
 ```
-detector = cv2.QRCodeDetector()
-data, bbox, _ = detector.detectAndDecode(frame)
+http://IP:8000/video
 ```
 
----
-
-## STEP 6 – Pixhawk Communication
+## WebSocket
 
 ```
-from pymavlink import mavutil
-
-master = mavutil.mavlink_connection('/dev/ttyUSB0', baud=115200)
+ws://IP:8000/ws
 ```
 
 ---
 
-## STEP 7 – Control dari Browser
+# 9. Troubleshooting
 
-```
-ws.send(JSON.stringify({
-    type: "control",
-    throttle: 0.5,
-    yaw: 10
-}));
+## Kamera tidak terbaca
+
+```bash
+ls /dev/video*
 ```
 
----
+Coba ganti index:
 
-## STEP 8 – Logging
-
-```
-import csv
+```python
+cv2.VideoCapture(1)
 ```
 
 ---
 
-## STEP 9 – Alarm System
+## Serial tidak connect
 
+```bash
+sudo chmod 666 /dev/ttyUSB0
 ```
-if depth > threshold:
-    trigger_alarm()
+
+atau:
+
+```bash
+sudo usermod -aG dialout $USER
 ```
+
+logout lalu login lagi.
 
 ---
 
-# 🔄 5. Alur Program
+## QR tidak jalan
 
-```
-START
- ↓
-SSH ke Jetson
- ↓
-Jalankan FastAPI Server
- ↓
-Laptop buka Browser
- ↓
-Akses http://IP_JETSON:8000
- ↓
-Stream kamera tampil
- ↓
-WebSocket kirim data realtime
- ↓
-User input (control)
- ↓
-Kirim ke Jetson → Pixhawk
- ↓
-Loop terus
+Pastikan:
+
+```bash
+sudo apt install libzbar0
 ```
 
 ---
 
-# ⚠️ 6. Best Practice
+## Cara Cepat install libary
 
-✅ Gunakan:
-- WebSocket (realtime)
-- MJPEG untuk video
-- Resize frame (640x360)
-- FPS 10–20
+windows:
+```bash
+pip install -r requirements.txt
 
-❌ Hindari:
-- Kirim raw frame via JSON
-- Polling HTTP terus-menerus
-- Render UI di Jetson
-- Blocking loop
+#atau
 
----
+python -m pip install -r requirements.txt
+```
 
-# 🚀 7. Strategi Development
+Linux:
+```bash
+sudo apt update
+sudo apt install python3 python3-pip
+sudo apt install libzbar0
 
-### Phase 1
-- FastAPI basic + dummy data
-
-### Phase 2
-- MJPEG camera
-
-### Phase 3
-- WebSocket data
-
-### Phase 4
-- QR detection
-
-### Phase 5
-- Pixhawk control
-
-### Phase 6
-- UI dashboard full
+pip3 install -r requirements.txt
+```
 
 ---
 
-# 🔥 8. Tips Lomba
+# 🎯 DONE
 
-- Gunakan LAN (bukan internet)
-- UI ringan & jelas
-- Pastikan latency rendah
-- Test di kondisi real
+Kalau semua benar:
 
-Tambahkan fitur:
-- Connection indicator
-- Auto reconnect
-- Warning system
-- Multi camera switch
-
----
-
-# 🎯 9. Kesimpulan
-
-Project ini adalah:
-
-👉 Ground Control System (GCS) berbasis Web  
-👉 Jetson sebagai **server (processing + data)**  
-👉 Laptop sebagai **client (UI di browser)**  
-
-Menggabungkan:
-
-- Web Technology (HTML, JS)
-- FastAPI (backend)
-- WebSocket (realtime)
-- Computer Vision (OpenCV)
-- Robotics Control (Pixhawk)
-
----
-
-## 🔥 Insight Utama
-
-> ❌ Jangan render UI di Jetson  
-> ✅ Pindahkan UI ke browser  
-
-➡️ Hasil:
-- Lebih ringan  
-- Lebih realtime  
-- Lebih stabil  
+* Server jalan ✅
+* Kamera tampil ✅
+* WebSocket aktif ✅
+* UI bisa diakses di browser ✅

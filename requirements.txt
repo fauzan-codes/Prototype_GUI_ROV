@@ -1,6 +1,8 @@
-PyQt5
-pygame
-matplotlib
-pandas
-opencv-python
-numpy
+fastapi==0.136.1
+uvicorn==0.46.0
+numpy==2.4.4
+opencv-python==4.13.0.92
+websockets==16.0
+pyserial==3.5
+python-multipart==0.0.29
+pyzbar==0.1.9
