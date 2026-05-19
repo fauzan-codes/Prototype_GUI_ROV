@@ -49,6 +49,8 @@ let autoSnapshotInterval = null;
 let isRecording = false;
 let hasRecording = false;
 let replayPlaying = false;
+let replayTimeout = null;
+let isReplayMode = false;
 
 let sessionLoaded = false;
 
@@ -140,8 +142,7 @@ function bindEvents() {
     document.getElementById("emergencyBtn").addEventListener("click", emergencyStop);
 
     // RECORD
-    document.getElementById("recordBtn").addEventListener("click", startRecording);
-    document.getElementById("stopRecordBtn").addEventListener("click", stopRecording);
+    document.getElementById("recordBtn").addEventListener("click", toggleRecording);
     document.getElementById("replayBtn").addEventListener("click", replayRecording);
 
     // AUTO SNAPSHOT
@@ -670,31 +671,40 @@ async function toggleCam(id, el, fromSession = false) {
     const placeholder = box.querySelector(".camera-placeholder span");
     const camIndex = id - 1;
 
+    camErrorLogged[id] = false;
+
     if (camTimeouts[id]) {
         clearTimeout(camTimeouts[id]);
         camTimeouts[id] = null;
     }
 
     if (el.checked) {
-        camStates[id] = "loading";
+        camStates[id] = "connecting";
+
         placeholder.innerText = "CONNECTING...";
+        box.classList.remove("active");
+        img.classList.remove("active");
+
         setCameraButtons(id, false);
 
         img.src = `/camera/${camIndex}?t=${Date.now()}`;
 
         camTimeouts[id] = setTimeout(async () => {
             if (camStates[id] !== "active") {
-                console.log(`[CAM] ${id} TIMEOUT`);
-
                 camStates[id] = "timeout";
+
+                console.log(`[CAM] ${id} TIMEOUT`);
 
                 el.checked = false;
                 img.src = "";
-                img.classList.remove("active");
+
                 box.classList.remove("active");
+                img.classList.remove("active");
 
                 placeholder.innerText = "CAMERA NOT FOUND";
                 setCameraButtons(id, false);
+
+                await sendLog(`[CAM] CAMERA ${id} TIMEOUT`);
 
                 try {
                     await fetch(`/camera/${camIndex}/off`, {
@@ -712,18 +722,23 @@ async function toggleCam(id, el, fromSession = false) {
             }
         }, 5000);
 
-
         img.onload = async () => {
+            if (!el.checked) return;
+
             if (camTimeouts[id]) {
                 clearTimeout(camTimeouts[id]);
                 camTimeouts[id] = null;
             }
 
             camStates[id] = "active";
+
             box.classList.add("active");
             img.classList.add("active");
-            setCameraButtons(id, true);
+
             placeholder.innerText = "";
+            setCameraButtons(id, true);
+
+            console.log(`[CAM] ${id} ONLINE`);
 
             if (!fromSession) {
                 await saveSession({
@@ -733,7 +748,9 @@ async function toggleCam(id, el, fromSession = false) {
         };
 
         img.onerror = async () => {
+            if (!el.checked) return;
             if (camErrorLogged[id]) return;
+
             camErrorLogged[id] = true;
 
             if (camTimeouts[id]) {
@@ -745,13 +762,15 @@ async function toggleCam(id, el, fromSession = false) {
 
             el.checked = false;
             img.src = "";
-            img.classList.remove("active");
-            box.classList.remove("active");
 
-            placeholder.innerText = "CAMERA NOT FOUND";
+            box.classList.remove("active");
+            img.classList.remove("active");
+
+            placeholder.innerText = "CAMERA ERROR";
             setCameraButtons(id, false);
 
-            await sendLog(`[CAM] CAMERA ${id} FAILED / NOT FOUND`);
+            console.log(`[CAM] ${id} ERROR`);
+            await sendLog(`[CAM] CAMERA ${id} ERROR`);
 
             try {
                 await fetch(`/camera/${camIndex}/off`, {
@@ -768,27 +787,34 @@ async function toggleCam(id, el, fromSession = false) {
             }
         };
 
-    } else {
+    } 
+    
+    else {
+        camStates[id] = "idle";
+
         if (camTimeouts[id]) {
             clearTimeout(camTimeouts[id]);
             camTimeouts[id] = null;
         }
-
         img.src = "";
         img.classList.remove("active");
-        camStates[id] = "idle";
-        box.classList.remove("active");
 
-        placeholder.innerText = "CAMERA OFFLINE";
+        const replayImg = document.getElementById(`cam${id}Replay`);
+        const box = img.closest(".camera-box");
+        const placeholder = box.querySelector(".camera-placeholder span");
+
+        if (!replayImg.classList.contains("active")) {
+            placeholder.innerText = "CAMERA OFFLINE";
+            box.classList.remove("active");
+        }
+
         setCameraButtons(id, false);
 
-        try {
-            await fetch(`/camera/${camIndex}/off`, {
-                method: "POST"
-            });
-        } catch (err) {
-            console.error(err);
-        }
+        console.log(`[CAM] ${id} OFF`);
+
+        await fetch(`/camera/${camIndex}/off`, {
+            method: "POST"
+        });
 
         if (!fromSession) {
             await saveSession({
@@ -1378,47 +1404,33 @@ async function fakeLog() {
 // RECORD
 function syncRecordUI() {
     const recordBtn = document.getElementById("recordBtn");
-    const stopBtn = document.getElementById("stopRecordBtn");
     const replayBtn = document.getElementById("replayBtn");
 
-
-    // RECORDING
     if (isRecording) {
-        recordBtn.classList.add(
-            "recording"
-        );
-
+        recordBtn.classList.add("stop-mode");
         recordBtn.innerHTML = `
-            <i class="fa-solid fa-circle"></i>
-            RECORDING...
+            <i class="fa-solid fa-stop"></i>
+            STOP RECORD
         `;
-
     } else {
-        recordBtn.classList.remove(
-            "recording"
-        );
-
+        recordBtn.classList.remove("stop-mode");
         recordBtn.innerHTML = `
             <i class="fa-solid fa-circle"></i>
             START RECORD
         `;
     }
 
-    // STOP
-    stopBtn.disabled = !isRecording;
-
-    // REPLAY
-    replayBtn.disabled =
-        !hasRecording || replayPlaying;
-
+    recordBtn.disabled = replayPlaying;
+    replayBtn.disabled = !hasRecording;
 
     if (replayPlaying) {
+        replayBtn.classList.add("stop-mode");
         replayBtn.innerHTML = `
-            <i class="fa-solid fa-spinner fa-spin"></i>
-            PLAYING...
+            <i class="fa-solid fa-stop"></i>
+            STOP REPLAY
         `;
-
     } else {
+        replayBtn.classList.remove("stop-mode");
         replayBtn.innerHTML = `
             <i class="fa-solid fa-play"></i>
             REPLAY
@@ -1428,15 +1440,14 @@ function syncRecordUI() {
 
 
 async function startRecording() {
-    if (isRecording) return;
+    if (replayPlaying) return;
 
-    const btn = document.getElementById("recordBtn");
-    if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 800);
+    await fetch("/record/start", { method: "POST" });
 
     isRecording = true;
     hasRecording = false;
 
+    setCameraToggleDisabled(true);
     syncRecordUI();
 
     await saveSession({
@@ -1446,6 +1457,7 @@ async function startRecording() {
             replayPlaying: false
         }
     });
+
     await sendLog("[REC] STARTED");
 }
 
@@ -1453,14 +1465,12 @@ async function startRecording() {
 async function stopRecording() {
     if (!isRecording) return;
 
-    const btn = document.getElementById("stopRecordBtn");
-
-    if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 1000);
+    await fetch("/record/stop", { method: "POST" });
 
     isRecording = false;
     hasRecording = true;
 
+    setCameraToggleDisabled(false);
     syncRecordUI();
 
     await saveSession({
@@ -1470,45 +1480,141 @@ async function stopRecording() {
             replayPlaying: false
         }
     });
+
     await sendLog("[REC] SAVED");
 }
 
 
 async function replayRecording() {
-    if (!hasRecording) return;
-    if (replayPlaying) return;
+    if (replayPlaying) {
+        stopReplay();
+        return;
+    }
 
     const btn = document.getElementById("replayBtn");
-
     if (isButtonLocked(btn)) return;
-    cooldownButton(btn, 5000);
+    cooldownButton(btn, 500);
+
+    if (!hasRecording) return;
 
     replayPlaying = true;
-    syncRecordUI();
 
     await saveSession({
         record: {
-            isRecording,
-            hasRecording,
+            isRecording: false,
+            hasRecording: true,
             replayPlaying: true
         }
     });
 
-    await sendLog("[REPLAY] STARTED");
+    syncRecordUI();
 
-    setTimeout(async () => {
+    const res = await fetch("/record/last");
+    const data = await res.json();
+
+    if (!data.filename) {
+        console.warn("[REPLAY] NO DATASET");
         replayPlaying = false;
         syncRecordUI();
+        return;
+    }
 
-        await saveSession({
-            record: {
-                isRecording,
-                hasRecording,
-                replayPlaying: false
-            }
-        });
-        await sendLog("[REPLAY] FINISHED");
-    }, 5000);
+    const box1 = document.getElementById("cam1").closest(".camera-box");
+    const box2 = document.getElementById("cam2").closest(".camera-box");
+    box1.classList.add("active");
+    box2.classList.add("active");
+
+    const durRes = await fetch(`/record/duration/${data.filename}`);
+    const durData = await durRes.json();
+    const duration = (durData.duration || 0) * 1000;
+
+    const cam1 = document.getElementById("cam1");
+    const cam2 = document.getElementById("cam2");
+
+    const cam1Replay = document.getElementById("cam1Replay");
+    const cam2Replay = document.getElementById("cam2Replay");
+
+    cam1Replay.src = `/replay/${data.filename}/0`;
+    cam2Replay.src = `/replay/${data.filename}/1`;
+
+    cam1Replay.classList.add("active");
+    cam2Replay.classList.add("active");
+
+    const durationSec = Math.round(durData.duration || 0);
+    await sendLog(`[REPLAY] ${data.filename} (${durationSec}s)`);
+
+    replayTimeout = setTimeout(async () => {
+        stopReplay(true);
+    }, duration + 1000);
+}
+
+
+function restoreRealtimeCamera() {
+    for (let id = 1; id <= 2; id++) {
+        if (camStates[id] === "active") {
+            const img = document.getElementById("cam" + id);
+            const camIndex = id - 1;
+            img.src = `/camera/${camIndex}?t=${Date.now()}`;
+        }
+    }
+}
+
+async function toggleRecording() {
+    if (replayPlaying) return;
+    if (isRecording) {
+        await stopRecording();
+    } else {
+        await startRecording();
+    }
+}
+
+function stopReplay(fromAuto = false) {
+    if (!replayPlaying) return;
+    replayPlaying = false;
+
+    if (replayTimeout) {
+        clearTimeout(replayTimeout);
+        replayTimeout = null;
+    }
+
+    const cam1Replay = document.getElementById("cam1Replay");
+    const cam2Replay = document.getElementById("cam2Replay");
+
+    cam1Replay.src = "";
+    cam2Replay.src = "";
+
+    cam1Replay.classList.remove("active");
+    cam2Replay.classList.remove("active");
+
+    for (let id = 1; id <= 2; id++) {
+        const img = document.getElementById("cam" + id);
+        const box = img.closest(".camera-box");
+        const placeholder = box.querySelector(".camera-placeholder span");
+
+        if (camStates[id] !== "active") {
+            img.src = "";
+            img.classList.remove("active");
+
+            box.classList.remove("active");
+            placeholder.innerText = "CAMERA OFFLINE";
+        }
+    }
+
+    saveSession({
+        record: {
+            isRecording: false,
+            hasRecording: true,
+            replayPlaying: false
+        }
+    });
+
+    syncRecordUI();
+
+    if (!fromAuto) {
+        sendLog("[REPLAY] STOPPED BY USER");
+    } else {
+        sendLog("[REPLAY] DONE");
+    }
 }
 
 

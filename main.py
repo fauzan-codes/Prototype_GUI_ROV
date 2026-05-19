@@ -15,8 +15,10 @@ import serial
 import asyncio
 import threading
 import random
-import json
+import base64
 import time
+import json
+import csv
 import cv2
 import re
 
@@ -33,12 +35,14 @@ CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
 SNAPSHOT_DIR = Path("data/snapshot")
 SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
+DATASET_DIR = Path("data/dataset")
+DATASET_DIR.mkdir(parents=True, exist_ok=True)
+
 shutdown_event = threading.Event()
 
 
 # =============== SESION STATE ===============
 session_state = {
-    # BASIC
     "mode": "KEYBOARD",
 
     "serial": {
@@ -335,7 +339,6 @@ def stream_camera(cam_id: int):
         return {"error": "Camera not found"}
 
     cam.open()
-
     session_state["camera"][str(cam_id + 1)] = True
 
     async def generate():
@@ -370,6 +373,17 @@ def stream_camera(cam_id: int):
 
                 frame = process_qr(frame, cam_id)
                 ok, buffer = cv2.imencode(".jpg", frame)
+
+                if session_state["record"]["isRecording"] and record_writer:
+                    try:
+                        encoded = base64.b64encode(buffer).decode("utf-8")
+                        record_writer.writerow([
+                            time.time(),
+                            cam_id,
+                            encoded
+                        ])
+                    except Exception as e:
+                        print("[REC ERROR]", e)
 
                 if not ok:
                     await asyncio.sleep(0.1)
@@ -409,7 +423,7 @@ def stop_camera(cam_id: int):
 
     session_state["camera"][str(cam_id + 1)] = False
     if session_state["camera_status"][cam_id]:
-        add_log(f"[CAM] CAMERA {cam_id + 1} OFFLINE")
+        # add_log(f"[CAM] CAMERA {cam_id + 1} OFFLINE")
         session_state["camera_status"][cam_id] = False
 
     return {
@@ -706,7 +720,7 @@ def reset_session():
     }
 
     qr_state = {
-        "last_scan_time": 0,
+        "last_scan_time": {},
         "last_publish_time": {},
         "last_main_result": None
     }
@@ -716,6 +730,152 @@ def reset_session():
     return {
         "success": True
     }
+
+
+# =============== REPLAY MODE ===============
+record_file = None
+record_writer = None
+last_dataset_filename = None
+
+def get_next_dataset_number(date_str):
+    files = list(DATASET_DIR.glob(f"dataset_{date_str}_*.csv"))
+    numbers = []
+
+    for f in files:
+        match = re.search(r'_(\d{3})\.csv', f.name)
+        if match:
+            numbers.append(int(match.group(1)))
+
+    return max(numbers, default=0) + 1
+
+
+@app.post("/record/start")
+def start_record():
+    global record_file, record_writer, last_dataset_filename
+
+    if session_state["record"]["isRecording"]:
+        return {"success": False}
+
+    now = datetime.now()
+    date_str = now.strftime("%d-%m-%Y")
+    number = get_next_dataset_number(date_str)
+
+    filename = f"dataset_{date_str}_{number:03d}.csv"
+    path = DATASET_DIR / filename
+
+    record_file = open(path, "w", newline="")
+    record_writer = csv.writer(record_file)
+    record_writer.writerow(["timestamp", "cam_id", "frame"])
+    last_dataset_filename = filename  
+
+    session_state["record"]["isRecording"] = True
+    session_state["record"]["hasRecording"] = False
+    session_state["record"]["replayPlaying"] = False
+
+    add_log(f"[REC] START {filename}")
+
+    return {"success": True}
+
+
+@app.post("/record/stop")
+def stop_record():
+    global record_file, record_writer
+
+    if record_file:
+        record_file.close()
+
+    record_file = None
+    record_writer = None
+
+    session_state["record"]["isRecording"] = False
+    session_state["record"]["hasRecording"] = True
+
+    add_log("[REC] STOP & SAVED")
+
+    return {"success": True}
+
+
+@app.get("/replay/{filename}/{cam_id}")
+async def replay_dataset(filename: str, cam_id: int):
+
+    path = DATASET_DIR / filename
+
+    if not path.exists():
+        return {"error": "file not found"}
+
+    async def generate():
+        prev_time = None
+
+        with open(path, "r") as f:
+            reader = csv.DictReader(f)
+
+            for row in reader:
+                if int(row["cam_id"]) != cam_id:
+                    continue
+
+                current_time = float(row["timestamp"])
+
+                if prev_time is not None:
+                    delay = current_time - prev_time
+                    await asyncio.sleep(max(0, delay))
+                else:
+                    await asyncio.sleep(0.03)
+
+                prev_time = current_time
+                frame_data = base64.b64decode(row["frame"])
+
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n"
+                    + frame_data
+                    + b"\r\n"
+                )
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.get("/record/duration/{filename}")
+def get_record_duration(filename: str):
+    path = DATASET_DIR / filename
+
+    if not path.exists():
+        return {"duration": 0}
+
+    first = None
+    last = None
+
+    with open(path, "r") as f:
+        reader = csv.DictReader(f)
+
+        for row in reader:
+            t = float(row["timestamp"])
+            if first is None:
+                first = t
+            last = t
+
+    if first is None or last is None:
+        return {"duration": 0}
+
+    return {
+        "duration": last - first
+    }
+
+
+@app.get("/record/last")
+def get_last_record():
+    return {
+        "filename": last_dataset_filename
+    }
+
+
+
+
+
+
+
 
 
 # =============== SHUTDOWN ===============

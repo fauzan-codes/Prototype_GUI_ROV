@@ -62,7 +62,8 @@
                     </div>
 
                     <div class="camera-box">
-                        <img id="cam1" alt="">
+                        <img id="cam1" class="cam-realtime" alt="">
+                        <img id="cam1Replay" class="cam-replay" alt="">
                         <div class="camera-placeholder">
                             <i class="fa-solid fa-camera"></i>
                             <span>CAMERA OFFLINE</span>
@@ -90,7 +91,8 @@
                     </div>
 
                     <div class="camera-box">
-                        <img id="cam2" alt="">
+                        <img id="cam2" class="cam-realtime" alt="">
+                        <img id="cam2Replay" class="cam-replay" alt="">
                         <div class="camera-placeholder">
                             <i class="fa-solid fa-camera"></i>
                             <span>CAMERA OFFLINE</span>
@@ -389,18 +391,8 @@
                     START RECORD
                 </button>
 
-                <!-- STOP -->
-                <button class="btn adv-btn stop-record-btn"
-                        id="stopRecordBtn"
-                        disabled>
-                    <i class="fa-solid fa-stop"></i>
-                    STOP
-                </button>
-
                 <!-- REPLAY -->
-                <button class="btn adv-btn replay-btn"
-                        id="replayBtn"
-                        disabled>
+                <button class="btn adv-btn replay-btn" id="replayBtn" disabled>
                     <i class="fa-solid fa-play"></i>
                     REPLAY
                 </button>
