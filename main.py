@@ -15,9 +15,7 @@ import serial
 import asyncio
 import threading
 import random
-import base64
 import time
-import json
 import csv
 import cv2
 import re
@@ -37,6 +35,9 @@ SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
 DATASET_DIR = Path("data/dataset")
 DATASET_DIR.mkdir(parents=True, exist_ok=True)
+
+FRAME_DIR = DATASET_DIR / "frames"
+FRAME_DIR.mkdir(parents=True, exist_ok=True)
 
 shutdown_event = threading.Event()
 
@@ -116,6 +117,9 @@ TRAJECTORY_Y = 500      #cm
 VALID_QR = ["A", "B", "C", "D"]
 QR_SCAN_COOLDOWN = 1.5
 QR_PUBLISH_INTERVAL = 120
+
+CAMERA_FPS = 20
+FRAME_DELAY = 1 / CAMERA_FPS
 
 
 # =============== ROOT ===============
@@ -376,11 +380,15 @@ def stream_camera(cam_id: int):
 
                 if session_state["record"]["isRecording"] and record_writer:
                     try:
-                        encoded = base64.b64encode(buffer).decode("utf-8")
+                        timestamp = int(time.time() * 1000)
+                        frame_name = f"{timestamp}_{cam_id}.jpg"
+                        frame_path = FRAME_DIR / frame_name
+                        cv2.imwrite(str(frame_path), frame)
+
                         record_writer.writerow([
                             time.time(),
                             cam_id,
-                            encoded
+                            frame_name
                         ])
                     except Exception as e:
                         print("[REC ERROR]", e)
@@ -396,7 +404,7 @@ def stream_camera(cam_id: int):
                     + b"\r\n"
                 )
 
-                await asyncio.sleep(0.03)
+                await asyncio.sleep(FRAME_DELAY)
 
         except asyncio.CancelledError:
             print(f"[CAM] STREAM {cam_id+1} CANCELLED")
@@ -488,15 +496,8 @@ def update_robot():
     robot_pos["x"] += random.randint(-20, 20)
     robot_pos["y"] += random.randint(-20, 20)
 
-    robot_pos["x"] = max(
-        0,
-        min(TRAJECTORY_X, robot_pos["x"])
-    )
-
-    robot_pos["y"] = max(
-        0,
-        min(TRAJECTORY_Y, robot_pos["y"])
-    )
+    robot_pos["x"] = max(0, min(TRAJECTORY_X, robot_pos["x"]))
+    robot_pos["y"] = max(0, min(TRAJECTORY_Y, robot_pos["y"]))
 
     point = {
         "x": robot_pos["x"],
@@ -504,7 +505,7 @@ def update_robot():
     }
 
     session_state["trajectory"].append(point)
-    if len(session_state["trajectory"]) > 500:
+    if len(session_state["trajectory"]) > 7000:
         session_state["trajectory"].pop(0)
 
 
@@ -517,7 +518,6 @@ async def websocket_endpoint(ws: WebSocket):
             update_robot()
             telemetry = {
                 "depth": random.randint(0, 300),
-                # "depth": 200,
                 "heading": random.randint(0, 360),
                 "pressure": random.randint(900, 1100),
 
@@ -835,10 +835,18 @@ async def replay_dataset(filename: str, cam_id: int):
                     delay = current_time - prev_time
                     await asyncio.sleep(max(0, delay))
                 else:
-                    await asyncio.sleep(0.03)
+                    await asyncio.sleep(FRAME_DELAY)
 
                 prev_time = current_time
-                frame_data = base64.b64decode(row["frame"])
+                
+                frame_name = row["frame"]
+                frame_path = FRAME_DIR / frame_name
+
+                if not frame_path.exists():
+                    continue
+
+                with open(frame_path, "rb") as img:
+                    frame_data = img.read()
 
                 yield (
                     b"--frame\r\n"

@@ -268,10 +268,14 @@ function applySession(state) {
 
     // SERIAL
     if (state.serial) {
+        const statusEl = document.getElementById("status");
         if (state.serial.connected) {
-            document.getElementById("status").innerText = `● SERIAL: ONLINE (${state.serial.port})`;
+            // statusEl.innerText = `● SERIAL: ONLINE (${state.serial.port})`;
+            statusEl.innerText = `● SERIAL: ONLINE`;
+            statusEl.style.setProperty("color", "#22c55e", "important");
         } else {
-            document.getElementById("status").innerText = "◌ SERIAL: OFFLINE";
+            statusEl.innerText = "◌ SERIAL: OFFLINE";
+            statusEl.style.setProperty("color", "#64748b", "important");
         }
     }
 
@@ -448,7 +452,7 @@ function handleTelemetry(msg) {
 
     if (msg.trajectory) {
         trajPath.push(msg.trajectory);
-        if (trajPath.length > 500) {
+        if (trajPath.length > 7000) {
             trajPath.shift();
         }
     }
@@ -465,14 +469,10 @@ function updateSessionRealtime(state) {
     // SERIAL STATUS
     if (state.serial) {
         if (state.serial.connected) {
-            document.getElementById("status")
-                .innerText =
-                `● SERIAL: ONLINE (${state.serial.port})`;
+            document.getElementById("status").innerText = `● SERIAL: ONLINE (${state.serial.port})`;
 
         } else {
-            document.getElementById("status")
-                .innerText =
-                "◌ SERIAL: OFFLINE";
+            document.getElementById("status").innerText = "◌ SERIAL: OFFLINE";
         }
     }
 
@@ -1036,7 +1036,7 @@ function updateDepthInfo() {
         card.classList.add("danger");
         dangerText.style.opacity = "1";
         dNum.classList.add("danger");
-        // playAlarm();
+        playAlarm();
 
     } else {
         card.classList.remove("danger");
@@ -1212,9 +1212,7 @@ function initModeSystem() {
                 modeCooldown = true;
 
                 modeButtons.forEach(b => {
-                    b.classList.remove(
-                        "active"
-                    );
+                    b.classList.remove("active");
                 });
 
                 btn.classList.add("active");
