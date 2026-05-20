@@ -1,4 +1,4 @@
-# 🚀 Setup & Run (Linux Only, Tanpa Virtual Environment)
+# 🚀 Setup & Run
 
 Panduan ini untuk menjalankan project dari nol sampai bisa diakses di browser.
 
